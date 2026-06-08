@@ -1,0 +1,10 @@
+aiogram==3.7.0
+anthropic==0.28.0
+pydantic-settings==2.3.4
+sqlalchemy==2.0.31
+asyncpg==0.29.0
+alembic==1.13.2
+redis==5.0.7
+aiohttp==3.9.5
+sentry-sdk==2.8.0
+Pillow==10.4.0
