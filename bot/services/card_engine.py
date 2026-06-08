@@ -3,9 +3,12 @@ import random
 from pathlib import Path
 
 
+_DATA_PATH = Path(__file__).parent.parent.parent / "data" / "tarot_cards.json"
+
+
 class CardEngine:
     def __init__(self):
-        data = json.loads(Path("data/tarot_cards.json").read_text(encoding="utf-8"))
+        data = json.loads(_DATA_PATH.read_text(encoding="utf-8"))
         self.cards = data["cards"]
 
     def draw(self, n: int = 3) -> list[dict]:

@@ -18,6 +18,7 @@ class User(Base):
     zodiac_sign: Mapped[str | None] = mapped_column(String(32))
     is_pro: Mapped[bool] = mapped_column(Boolean, default=False)
     pro_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extra_spreads: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

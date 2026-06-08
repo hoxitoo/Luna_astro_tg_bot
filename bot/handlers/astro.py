@@ -19,7 +19,7 @@ PAYWALL_TEXT = (
 async def daily_horoscope(callback: CallbackQuery, bot: Bot) -> None:
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, callback.from_user.id)
-        can = await limit_service.can_do_horoscope(session, user.telegram_id, user.is_pro)
+        can = await limit_service.can_do_horoscope(session, user)
 
     if not user.zodiac_sign:
         await callback.answer("Сначала укажи знак зодиака в настройках", show_alert=True)

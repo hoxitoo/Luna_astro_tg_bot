@@ -1,4 +1,3 @@
-from datetime import datetime, timezone, timedelta
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
@@ -40,15 +39,16 @@ async def tarot_menu_cb(callback: CallbackQuery) -> None:
 async def tarot_3_start(callback: CallbackQuery, state: FSMContext) -> None:
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, callback.from_user.id)
-        can = await limit_service.can_do_tarot(session, user.telegram_id, user.is_pro)
-        remaining = await limit_service.remaining_tarot(session, user.telegram_id)
+        can = await limit_service.can_do_tarot(session, user)
+        remaining = await limit_service.remaining_tarot(session, user)
 
     if not can:
         await callback.message.edit_text(PAYWALL_TEXT, parse_mode="Markdown", reply_markup=paywall_menu())
         return
 
     await state.set_state(TarotFSM.waiting_question_3)
-    hint = f"_(осталось раскладов сегодня: {remaining})_\n\n" if not user.is_pro else ""
+    is_pro = limit_service.is_pro_active(user)
+    hint = f"_(осталось раскладов сегодня: {remaining})_\n\n" if not is_pro else ""
     await callback.message.edit_text(
         f"🔮 {hint}О чём хочешь спросить карты?\n\nНапиши свой вопрос — или просто то, что сейчас на душе.",
         parse_mode="Markdown",
@@ -61,9 +61,11 @@ async def tarot_3_interpret(message: Message, state: FSMContext, bot: Bot) -> No
     await state.clear()
     question = message.text.strip()
 
+    # NOTE: small concurrency window between check and increment exists here;
+    # acceptable for MVP. Fix later with Redis lock per user.
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, message.from_user.id)
-        can = await limit_service.can_do_tarot(session, user.telegram_id, user.is_pro)
+        can = await limit_service.can_do_tarot(session, user)
 
     if not can:
         await message.answer(PAYWALL_TEXT, parse_mode="Markdown", reply_markup=paywall_menu())
@@ -81,7 +83,8 @@ async def tarot_3_interpret(message: Message, state: FSMContext, bot: Bot) -> No
     text = f"_{cards_line}_\n\n{interpretation}"
 
     async with async_session_factory() as session:
-        await limit_service.use_tarot(session, user.telegram_id)
+        user = await crud.get_or_create_user(session, message.from_user.id)
+        await limit_service.use_tarot(session, user)
 
     await message.answer(text, parse_mode="Markdown", reply_markup=back_to_menu())
 
@@ -90,7 +93,7 @@ async def tarot_3_interpret(message: Message, state: FSMContext, bot: Bot) -> No
 async def tarot_relations_start(callback: CallbackQuery, state: FSMContext) -> None:
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, callback.from_user.id)
-        can = await limit_service.can_do_tarot(session, user.telegram_id, user.is_pro)
+        can = await limit_service.can_do_tarot(session, user)
 
     if not can:
         await callback.message.edit_text(PAYWALL_TEXT, parse_mode="Markdown", reply_markup=paywall_menu())
@@ -110,7 +113,7 @@ async def tarot_relations_interpret(message: Message, state: FSMContext, bot: Bo
 
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, message.from_user.id)
-        can = await limit_service.can_do_tarot(session, user.telegram_id, user.is_pro)
+        can = await limit_service.can_do_tarot(session, user)
 
     if not can:
         await message.answer(PAYWALL_TEXT, parse_mode="Markdown", reply_markup=paywall_menu())
@@ -128,7 +131,8 @@ async def tarot_relations_interpret(message: Message, state: FSMContext, bot: Bo
     text = f"_{cards_line}_\n\n{interpretation}"
 
     async with async_session_factory() as session:
-        await limit_service.use_tarot(session, user.telegram_id)
+        user = await crud.get_or_create_user(session, message.from_user.id)
+        await limit_service.use_tarot(session, user)
 
     await message.answer(text, parse_mode="Markdown", reply_markup=back_to_menu())
 
@@ -138,7 +142,7 @@ async def tarot_year(callback: CallbackQuery, bot: Bot) -> None:
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, callback.from_user.id)
 
-    if not user.is_pro:
+    if not limit_service.is_pro_active(user):
         await callback.message.edit_text(
             "📅 Расклад на год доступен только в Pro-подписке.\n\n"
             "Это глубокая работа — 12 карт, каждая открывает свой месяц...",
@@ -151,8 +155,6 @@ async def tarot_year(callback: CallbackQuery, bot: Bot) -> None:
     cards = card_engine.draw(12)
     name = user.name or callback.from_user.first_name or "незнакомка"
     zodiac = user.zodiac_sign or "неизвестный знак"
-    msk = timezone(timedelta(hours=3))
-    today = datetime.now(msk).strftime("%d.%m.%Y")
 
     interpretation = await claude_service.yearly_forecast_12(name, zodiac, cards)
     await callback.message.edit_text(interpretation, parse_mode="Markdown", reply_markup=back_to_menu())

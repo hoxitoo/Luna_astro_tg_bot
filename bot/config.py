@@ -1,7 +1,9 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
     BOT_TOKEN: str
     CLAUDE_API_KEY: str
     DATABASE_URL: str
@@ -15,9 +17,7 @@ class Settings(BaseSettings):
     SUBSCRIPTION_PRICE_YEAR: int = 990
     WEBHOOK_HOST: str = ""
     SENTRY_DSN: str = ""
-
-    class Config:
-        env_file = ".env"
+    ADMIN_IDS: list[int] = []
 
 
 settings = Settings()

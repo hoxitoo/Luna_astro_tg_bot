@@ -64,6 +64,22 @@ async def create_payment(session: AsyncSession, user_id: int, amount: int, plan:
     return payment
 
 
+async def add_extra_spreads(session: AsyncSession, user_id: int, count: int) -> None:
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+    if user:
+        user.extra_spreads += count
+        await session.commit()
+
+
+async def use_extra_spread(session: AsyncSession, user_id: int) -> None:
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+    if user and user.extra_spreads > 0:
+        user.extra_spreads -= 1
+        await session.commit()
+
+
 async def set_payment_status(session: AsyncSession, inv_id: int, status: str) -> Payment | None:
     result = await session.execute(select(Payment).where(Payment.robokassa_inv_id == inv_id))
     payment = result.scalar_one_or_none()

@@ -1,11 +1,12 @@
 from aiohttp.web import Request, Response
-from aiogram import Router, F, Bot
-from aiogram.types import CallbackQuery
+from aiogram import Router, F
+from aiogram.types import CallbackQuery, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.config import settings
 from bot.db.session import async_session_factory
 from bot.db import crud
 from bot.services.payment_service import generate_inv_id, generate_payment_url, verify_result_signature
-from bot.keyboards.inline import paywall_menu, back_to_menu
+from bot.keyboards.inline import paywall_menu
 
 router = Router()
 
@@ -29,6 +30,8 @@ async def _create_payment_link(callback: CallbackQuery, plan: str) -> None:
         "year": settings.SUBSCRIPTION_PRICE_YEAR,
         "pack": 99,
     }
+    plan_names = {"month": "месяц", "year": "год", "pack": "пакет +10 раскладов"}
+
     amount = amount_map[plan]
     inv_id = generate_inv_id()
     user_id = callback.from_user.id
@@ -37,10 +40,7 @@ async def _create_payment_link(callback: CallbackQuery, plan: str) -> None:
         await crud.create_payment(session, user_id, amount, plan, inv_id)
 
     url = generate_payment_url(user_id, amount, inv_id)
-    plan_names = {"month": "месяц", "year": "год", "pack": "пакет +10 раскладов"}
 
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    from aiogram.types import InlineKeyboardButton
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text=f"💳 Оплатить {amount} ₽", url=url))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="paywall"))
@@ -70,7 +70,7 @@ async def pay_pack(callback: CallbackQuery) -> None:
 
 
 async def robokassa_result_handler(request: Request) -> Response:
-    """Webhook endpoint for Robokassa ResultURL."""
+    """Webhook endpoint for Robokassa ResultURL (POST)."""
     data = await request.post()
     out_sum = data.get("OutSum", "")
     inv_id = data.get("InvId", "")
@@ -81,7 +81,10 @@ async def robokassa_result_handler(request: Request) -> Response:
 
     async with async_session_factory() as session:
         payment = await crud.set_payment_status(session, int(inv_id), "paid")
-        if payment and payment.plan in ("month", "year"):
-            await crud.set_pro(session, payment.user_id, payment.plan)
+        if payment:
+            if payment.plan in ("month", "year"):
+                await crud.set_pro(session, payment.user_id, payment.plan)
+            elif payment.plan == "pack":
+                await crud.add_extra_spreads(session, payment.user_id, 10)
 
     return Response(text=f"OK{inv_id}")
