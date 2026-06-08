@@ -1,7 +1,17 @@
+import json
+import logging
+import random
+from pathlib import Path
 import anthropic
 from bot.config import settings
+from bot.services.cache_service import get_cached, set_cached, make_cache_key
+
+logger = logging.getLogger(__name__)
 
 _client: anthropic.AsyncAnthropic | None = None
+_fallback: dict | None = None
+
+_FALLBACK_PATH = Path(__file__).parent.parent.parent / "data" / "fallback_responses.json"
 
 
 def get_client() -> anthropic.AsyncAnthropic:
@@ -11,19 +21,43 @@ def get_client() -> anthropic.AsyncAnthropic:
     return _client
 
 
+def _get_fallback(kind: str = "tarot") -> str:
+    global _fallback
+    if _fallback is None:
+        _fallback = json.loads(_fallback_path().read_text(encoding="utf-8"))
+    return random.choice(_fallback.get(kind, _fallback["tarot"]))
+
+
+def _fallback_path() -> Path:
+    return _FALLBACK_PATH
+
+
 def _reversed_suffix(card: dict) -> str:
     return " (перевёрнутая)" if card.get("reversed") else ""
 
 
-async def _ask(system: str, user: str) -> str:
-    message = await get_client().messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=600,
-        temperature=0.9,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-    return message.content[0].text
+async def _ask(system: str, user: str, cache_key: str | None = None, fallback_kind: str = "tarot") -> str:
+    if cache_key:
+        cached = await get_cached(cache_key)
+        if cached:
+            logger.debug(f"Cache hit: {cache_key[:8]}")
+            return cached
+
+    try:
+        message = await get_client().messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=600,
+            temperature=0.9,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        result = message.content[0].text
+        if cache_key:
+            await set_cached(cache_key, result)
+        return result
+    except Exception as e:
+        logger.error(f"Claude API error: {e}")
+        return _get_fallback(fallback_kind)
 
 
 # --- Промпт 1+2: расклад на 3 карты ---
@@ -83,7 +117,12 @@ async def interpret_tarot_3(cards: list[dict], question: str, name: str) -> str:
         f"{cards[1]['name_ru']}{_reversed_suffix(cards[1])}, "
         f"{cards[2]['name_ru']}{_reversed_suffix(cards[2])}"
     )
-    return await _ask(system, user)
+    # Cache key excludes name — same cards+question get cached response
+    ck = make_cache_key("tarot3", question,
+                        cards[0]["id"], cards[0]["reversed"],
+                        cards[1]["id"], cards[1]["reversed"],
+                        cards[2]["id"], cards[2]["reversed"])
+    return await _ask(system, user, cache_key=ck, fallback_kind="tarot")
 
 
 # --- Промпт 3: ежедневный гороскоп ---
@@ -107,7 +146,8 @@ async def daily_horoscope(name: str, zodiac_sign: str, today: str) -> str:
 Имя упомяни один раз в начале."""
 
     user = f"Имя: {name}\nЗнак зодиака: {zodiac_sign}\nДата: {today}"
-    return await _ask(system, user)
+    ck = make_cache_key("horoscope", zodiac_sign, today)
+    return await _ask(system, user, cache_key=ck, fallback_kind="horoscope")
 
 
 # --- Промпт 4: расклад на отношения (5 карт) ---
@@ -137,7 +177,8 @@ async def interpret_relationship_5(cards: list[dict], question: str, name: str) 
 
     cards_str = ", ".join(f"{c['name_ru']}{_reversed_suffix(c)}" for c in cards)
     user = f"Имя: {name}\nВопрос: {question}\nКарты: {cards_str}"
-    return await _ask(system, user)
+    ck = make_cache_key("rel5", question, [(c["id"], c["reversed"]) for c in cards])
+    return await _ask(system, user, cache_key=ck, fallback_kind="tarot")
 
 
 # --- Промпт 5: карта дня ---
@@ -154,7 +195,8 @@ async def card_of_day(card: dict, today: str) -> str:
 
     reversed_str = "да" if card.get("reversed") else "нет"
     user = f"Карта: {card['name_ru']}\nПеревёрнутая: {reversed_str}\nДата: {today}"
-    return await _ask(system, user)
+    ck = make_cache_key("card_day", card["id"], card["reversed"], today)
+    return await _ask(system, user, cache_key=ck, fallback_kind="card_of_day")
 
 
 # --- Промпт 6: свободный вопрос ---
@@ -188,7 +230,8 @@ async def free_chat(name: str, message: str) -> str:
 Длина: 80-120 слов."""
 
     user = f"Имя: {name}\nСообщение: {message}"
-    return await _ask(system, user)
+    # Free chat is too personal to cache
+    return await _ask(system, user, fallback_kind="free_chat")
 
 
 # --- Промпт 7: расклад на год (12 карт, premium) ---
@@ -219,4 +262,5 @@ async def yearly_forecast_12(name: str, zodiac_sign: str, cards: list[dict]) -> 
         for i in range(12)
     )
     user = f"Имя: {name}\nЗнак зодиака: {zodiac_sign}\nКарты (январь → декабрь):\n{cards_list}"
-    return await _ask(system, user)
+    ck = make_cache_key("year12", zodiac_sign, [(c["id"], c["reversed"]) for c in cards])
+    return await _ask(system, user, cache_key=ck, fallback_kind="tarot")
