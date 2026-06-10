@@ -47,7 +47,10 @@ async def _ask(system: str, user: str, cache_key: str | None = None, fallback_ki
             system=system,
             messages=[{"role": "user", "content": user}],
         )
-        result = message.content[0].text
+        result = message.content[0].text.strip()
+        if not result:
+            logger.warning("Claude returned empty response, using fallback")
+            return _get_fallback(fallback_kind)
         if cache_key:
             await set_cached(cache_key, result)
         return result

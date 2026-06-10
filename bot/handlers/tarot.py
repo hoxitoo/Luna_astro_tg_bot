@@ -7,7 +7,7 @@ from bot.db import crud
 from bot.services import limit_service, claude_service
 from bot.services.card_engine import card_engine
 from bot.keyboards.inline import cancel_button, back_to_menu, tarot_menu, paywall_menu
-from bot.utils.text_utils import cards_line
+from bot.utils.text_utils import cards_line, truncate
 
 router = Router()
 
@@ -154,4 +154,9 @@ async def tarot_year(callback: CallbackQuery, bot: Bot) -> None:
     zodiac = user.zodiac_sign or "неизвестный знак"
 
     interpretation = await claude_service.yearly_forecast_12(name, zodiac, cards)
-    await callback.message.edit_text(interpretation, parse_mode="Markdown", reply_markup=back_to_menu())
+    # Yearly forecast can be 400+ words — guard against Telegram's 4096 char limit
+    await callback.message.edit_text(
+        truncate(interpretation, max_len=4096),
+        parse_mode="Markdown",
+        reply_markup=back_to_menu()
+    )

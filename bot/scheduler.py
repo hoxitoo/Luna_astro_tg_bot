@@ -12,6 +12,7 @@ from bot.db.models import User
 from bot.services.card_engine import card_engine
 from bot.services import claude_service
 from bot.services.cache_service import get_redis
+from bot.utils.text_utils import card_display_name
 
 logger = logging.getLogger(__name__)
 MSK = timezone(timedelta(hours=3))
@@ -30,7 +31,7 @@ async def _broadcast_card_of_day(bot: Bot) -> None:
     card = card_engine.draw(1)[0]
     today_fmt = datetime.now(MSK).strftime("%d %B %Y")
     text_body = await claude_service.card_of_day(card, today_fmt)
-    card_header = f"🃏 *{card['name_ru']}*{'  ↓' if card['reversed'] else ''}\n\n"
+    card_header = f"🃏 *{card_display_name(card)}*\n\n"
     text = card_header + text_body
 
     async with async_session_factory() as session:
