@@ -50,9 +50,24 @@ async def increment_horoscope(session: AsyncSession, user_id: int, today: date) 
 
 
 async def set_pro(session: AsyncSession, user_id: int, plan: str) -> None:
+    """Activate or extend Pro subscription.
+
+    If the user already has an active subscription, the new period is added
+    on top of the current expiry date (not from now) so they don't lose days.
+    """
     now = datetime.now(timezone.utc)
     days = 365 if plan == "year" else 30
-    pro_until = now + timedelta(days=days)
+
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+
+    # Extend from existing expiry if still active, otherwise from now
+    base = (
+        user.pro_until
+        if (user and user.pro_until and user.pro_until > now)
+        else now
+    )
+    pro_until = base + timedelta(days=days)
     await update_user(session, user_id, is_pro=True, pro_until=pro_until)
 
 
