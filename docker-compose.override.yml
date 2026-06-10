@@ -1,0 +1,19 @@
+# Local development overrides — not committed to production
+# Usage: docker-compose up -d  (this file is loaded automatically)
+version: "3.9"
+
+services:
+  bot:
+    volumes:
+      - .:/app          # hot-reload: code changes reflected without rebuild
+    environment:
+      ROBOKASSA_TEST_MODE: "True"
+      WEBHOOK_HOST: ""  # use long polling locally
+
+  db:
+    ports:
+      - "5432:5432"     # expose postgres for local DB tools (DBeaver, etc.)
+
+  redis:
+    ports:
+      - "6379:6379"     # expose redis for local inspection

@@ -24,12 +24,8 @@ def get_client() -> anthropic.AsyncAnthropic:
 def _get_fallback(kind: str = "tarot") -> str:
     global _fallback
     if _fallback is None:
-        _fallback = json.loads(_fallback_path().read_text(encoding="utf-8"))
+        _fallback = json.loads(_FALLBACK_PATH.read_text(encoding="utf-8"))
     return random.choice(_fallback.get(kind, _fallback["tarot"]))
-
-
-def _fallback_path() -> Path:
-    return _FALLBACK_PATH
 
 
 def _reversed_suffix(card: dict) -> str:

@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from bot.config import settings
 from bot.db.session import async_session_factory
 from bot.db.models import User, Payment
+from bot.db import crud
 
 router = Router()
 
@@ -110,7 +111,6 @@ async def cmd_grant_pro(message: Message) -> None:
         await message.answer("Неверный формат ID или количества дней.")
         return
 
-    from bot.db import crud
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, target_id)
         now = datetime.now(timezone.utc)
