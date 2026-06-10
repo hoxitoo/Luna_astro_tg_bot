@@ -6,6 +6,7 @@ from bot.db import crud
 from bot.services import limit_service, claude_service
 from bot.services.card_engine import card_engine
 from bot.keyboards.inline import back_to_menu, paywall_menu
+from bot.utils.text_utils import card_display_name
 
 router = Router()
 
@@ -21,8 +22,13 @@ async def daily_horoscope(callback: CallbackQuery, bot: Bot) -> None:
         user = await crud.get_or_create_user(session, callback.from_user.id)
         can = await limit_service.can_do_horoscope(session, user)
 
+    # Check zodiac BEFORE showing paywall — user might just not have set it yet
     if not user.zodiac_sign:
-        await callback.answer("Сначала укажи знак зодиака в настройках", show_alert=True)
+        await callback.answer(
+            "Укажи свой знак зодиака при регистрации (/start), "
+            "и я открою тебе гороскоп.",
+            show_alert=True
+        )
         return
 
     if not can:
@@ -51,7 +57,7 @@ async def card_of_day(callback: CallbackQuery, bot: Bot) -> None:
     card = card_engine.draw(1)[0]
     text = await claude_service.card_of_day(card, today)
 
-    card_header = f"🃏 *{card['name_ru']}*{'  ↓' if card['reversed'] else ''}\n\n"
+    card_header = f"🃏 *{card_display_name(card)}*\n\n"
     await callback.message.edit_text(
         card_header + text,
         parse_mode="Markdown",

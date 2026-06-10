@@ -7,6 +7,7 @@ from bot.db import crud
 from bot.services import limit_service, claude_service
 from bot.services.card_engine import card_engine
 from bot.keyboards.inline import cancel_button, back_to_menu, tarot_menu, paywall_menu
+from bot.utils.text_utils import cards_line
 
 router = Router()
 
@@ -77,10 +78,8 @@ async def tarot_3_interpret(message: Message, state: FSMContext, bot: Bot) -> No
 
     interpretation = await claude_service.interpret_tarot_3(cards, question, name)
 
-    cards_line = " · ".join(
-        f"{c['name_ru']}{'↓' if c['reversed'] else ''}" for c in cards
-    )
-    text = f"_{cards_line}_\n\n{interpretation}"
+    header = f"_{cards_line(cards)}_\n\n"
+    text = header + interpretation
 
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, message.from_user.id)
@@ -125,10 +124,8 @@ async def tarot_relations_interpret(message: Message, state: FSMContext, bot: Bo
 
     interpretation = await claude_service.interpret_relationship_5(cards, question, name)
 
-    cards_line = " · ".join(
-        f"{c['name_ru']}{'↓' if c['reversed'] else ''}" for c in cards
-    )
-    text = f"_{cards_line}_\n\n{interpretation}"
+    header = f"_{cards_line(cards)}_\n\n"
+    text = header + interpretation
 
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, message.from_user.id)
