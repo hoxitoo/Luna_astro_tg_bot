@@ -1,13 +1,14 @@
 """Lunar Diary — spread history with pagination."""
 import math
 from aiogram import Router, F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.db.session import async_session_factory
 from bot.db import crud
-from bot.utils.text_utils import truncate
+from bot.utils.text_utils import truncate, escape_md1
 
 router = Router()
 
@@ -87,7 +88,11 @@ async def _show_diary(target, user_id: int, page: int) -> None:
     if isinstance(target, Message):
         await target.answer(text, parse_mode="Markdown", reply_markup=kb)
     else:
-        await target.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+        try:
+            await target.message.edit_text(text, parse_mode="Markdown", reply_markup=kb)
+        except TelegramBadRequest:
+            # "message is not modified" — user re-clicked the same page
+            await target.answer()
 
 
 @router.message(Command("history"))
@@ -97,13 +102,21 @@ async def cmd_history(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("history_page:"))
 async def history_page(callback: CallbackQuery) -> None:
-    page = int(callback.data.split(":", 1)[1])
+    try:
+        page = max(1, int(callback.data.split(":", 1)[1]))
+    except ValueError:
+        await callback.answer()
+        return
     await _show_diary(callback, callback.from_user.id, page=page)
 
 
 @router.callback_query(F.data.startswith("spread_view:"))
 async def spread_view(callback: CallbackQuery) -> None:
-    spread_id = int(callback.data.split(":", 1)[1])
+    try:
+        spread_id = int(callback.data.split(":", 1)[1])
+    except ValueError:
+        await callback.answer()
+        return
     async with async_session_factory() as session:
         spread = await crud.get_spread_by_id(session, spread_id, callback.from_user.id)
 
@@ -117,7 +130,8 @@ async def spread_view(callback: CallbackQuery) -> None:
 
     header = f"🃏 *{type_name}* · {date_str}\n"
     if spread.question:
-        header += f"_{spread.question}_\n"
+        # User-supplied text — escape so '_' or '*' inside don't break the whole message
+        header += f"_{escape_md1(spread.question)}_\n"
     header += "\n"
 
     full_text = header + spread.interpretation
@@ -126,11 +140,19 @@ async def spread_view(callback: CallbackQuery) -> None:
     builder.row(InlineKeyboardButton(text="◀️ Дневник", callback_data="history_page:1"))
     builder.row(InlineKeyboardButton(text="◀️ Главное меню", callback_data="main_menu"))
 
-    await callback.message.edit_text(
-        truncate(full_text, max_len=4096),
-        parse_mode="Markdown",
-        reply_markup=builder.as_markup()
-    )
+    try:
+        await callback.message.edit_text(
+            truncate(full_text, max_len=4096),
+            parse_mode="Markdown",
+            reply_markup=builder.as_markup()
+        )
+    except TelegramBadRequest:
+        # Unbalanced markup in the stored interpretation — show as plain text
+        await callback.message.edit_text(
+            truncate(full_text, max_len=4096),
+            parse_mode=None,
+            reply_markup=builder.as_markup()
+        )
 
 
 @router.callback_query(F.data == "noop")

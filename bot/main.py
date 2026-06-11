@@ -28,6 +28,12 @@ async def main() -> None:
         sentry_sdk.init(dsn=settings.SENTRY_DSN, traces_sample_rate=0.1)
         logger.info("Sentry initialized")
 
+    if settings.ROBOKASSA_TEST_MODE:
+        logger.warning(
+            "=== ROBOKASSA TEST MODE IS ON — payments are NOT real. "
+            "Unset ROBOKASSA_TEST_MODE before launch! ==="
+        )
+
     bot = Bot(
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)

@@ -53,3 +53,23 @@ async def clear_user_flag(user_id: int, flag: str) -> None:
         await get_redis().delete(f"flag:{flag}:{user_id}")
     except Exception:
         pass
+
+
+async def get_daily_count(user_id: int, name: str, day: str) -> int:
+    """Current value of a per-user daily counter. 0 on Redis failure (fail-open)."""
+    try:
+        value = await get_redis().get(f"cnt:{name}:{user_id}:{day}")
+        return int(value) if value else 0
+    except Exception:
+        return 0
+
+
+async def incr_daily_count(user_id: int, name: str, day: str, ttl: int = 86400 * 2) -> None:
+    try:
+        redis = get_redis()
+        key = f"cnt:{name}:{user_id}:{day}"
+        value = await redis.incr(key)
+        if value == 1:
+            await redis.expire(key, ttl)
+    except Exception as e:
+        logger.warning(f"Redis incr failed: {e}")

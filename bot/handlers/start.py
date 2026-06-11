@@ -7,12 +7,16 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from bot.db.session import async_session_factory
 from bot.db import crud
-from bot.keyboards.inline import main_menu, zodiac_keyboard, cancel_button, persona_keyboard
-from bot.services.limit_service import is_pro_active
+from bot.keyboards.inline import main_menu, zodiac_keyboard, cancel_button
+from bot.utils.text_utils import ZODIAC_EMOJI
 
 router = Router()
 
 _DATE_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?$")
+
+# Sentinel year for users who gave only day+month.
+# Must be a LEAP year so 29.02 birthdays are accepted (1900 is not).
+_NO_YEAR = 2000
 
 
 class OnboardingFSM(StatesGroup):
@@ -73,7 +77,7 @@ async def setup_profile(callback: CallbackQuery, state: FSMContext) -> None:
     )
 
 
-@router.message(OnboardingFSM.waiting_name)
+@router.message(OnboardingFSM.waiting_name, F.text)
 async def process_name(message: Message, state: FSMContext) -> None:
     name = message.text.strip()[:64]
     await state.update_data(name=name)
@@ -88,6 +92,10 @@ async def process_name(message: Message, state: FSMContext) -> None:
 @router.callback_query(OnboardingFSM.waiting_zodiac, F.data.startswith("zodiac_"))
 async def process_zodiac(callback: CallbackQuery, state: FSMContext) -> None:
     zodiac = callback.data.replace("zodiac_", "")
+    # callback.data is client-supplied — whitelist against known signs
+    if zodiac not in ZODIAC_EMOJI:
+        await callback.answer("Выбери знак с клавиатуры.", show_alert=True)
+        return
     await state.update_data(zodiac=zodiac)
     await state.set_state(OnboardingFSM.waiting_birth_date)
     await callback.message.edit_text(
@@ -113,7 +121,7 @@ async def skip_birthdate(callback: CallbackQuery, state: FSMContext) -> None:
     await _finish_onboarding(callback, state, birth_date=None)
 
 
-@router.message(OnboardingFSM.waiting_birth_date)
+@router.message(OnboardingFSM.waiting_birth_date, F.text)
 async def process_birth_date(message: Message, state: FSMContext) -> None:
     m = _DATE_RE.match(message.text.strip())
     if not m:
@@ -126,7 +134,7 @@ async def process_birth_date(message: Message, state: FSMContext) -> None:
         return
 
     day, month = int(m.group(1)), int(m.group(2))
-    year = int(m.group(3)) if m.group(3) else 1900
+    year = int(m.group(3)) if m.group(3) else _NO_YEAR
     try:
         birth_date = date(year, month, day)
     except ValueError:

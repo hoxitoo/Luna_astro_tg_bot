@@ -23,8 +23,9 @@ class ThrottlingMiddleware(BaseMiddleware):
             allowed = await set_user_flag(user.id, "throttle", ttl=1)
             if not allowed:
                 if isinstance(event, CallbackQuery):
+                    # Toast on the button — cheap, no chat message
                     await event.answer(THROTTLE_TEXT)
-                elif isinstance(event, Message):
-                    await event.answer(THROTTLE_TEXT)
+                # Messages: drop silently — replying to every flooded message
+                # would amplify the flood instead of damping it
                 return None
         return await handler(event, data)

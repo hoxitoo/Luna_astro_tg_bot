@@ -98,3 +98,18 @@ async def test_apply_referral_sets_referred_by(session):
     res = await session.execute(select(User).where(User.telegram_id == 208))
     user = res.scalar_one()
     assert user.referred_by == 207
+
+
+@pytest.mark.asyncio
+async def test_apply_referral_nonexistent_referrer_rejected(session):
+    """Exploit guard: /start ref_<random_number> must NOT mint a free Pro week."""
+    user = await crud.get_or_create_user(session, telegram_id=209)
+
+    result = await crud.apply_referral(session, 209, 99999999)  # referrer doesn't exist
+
+    assert result is False
+    res = await session.execute(select(User).where(User.telegram_id == 209))
+    updated = res.scalar_one()
+    assert updated.is_pro is False
+    assert updated.referred_by is None
+    assert updated.referral_bonus_given is False

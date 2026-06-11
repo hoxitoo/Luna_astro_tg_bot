@@ -20,6 +20,7 @@ class User(Base):
     pro_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     extra_spreads: Mapped[int] = mapped_column(Integer, default=0)
     luna_persona: Mapped[str] = mapped_column(String(16), default="young_moon")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # False = blocked the bot
     referred_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     referral_bonus_given: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -59,7 +60,9 @@ class Payment(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id"))
     amount: Mapped[int] = mapped_column(Integer)
     plan: Mapped[str] = mapped_column(String(16))  # 'month' | 'year' | 'pack'
-    robokassa_inv_id: Mapped[int] = mapped_column(Integer, unique=True)
+    # Set to the row's own autoincrement id right after INSERT (collision-free InvId).
+    # Nullable so the initial flush passes; multiple NULLs don't violate UNIQUE.
+    robokassa_inv_id: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|paid|failed
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

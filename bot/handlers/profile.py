@@ -41,8 +41,9 @@ def _profile_keyboard(has_name: bool, is_pro: bool = False) -> object:
     builder = InlineKeyboardBuilder()
     if not has_name:
         builder.row(InlineKeyboardButton(text="📝 Настроить профиль", callback_data="setup_profile"))
-    if is_pro:
-        builder.row(InlineKeyboardButton(text="🌙 Сменить Луну", callback_data="change_persona"))
+    # Visible to everyone: free users see the two Pro archetypes locked —
+    # the persona picker doubles as a paywall advert
+    builder.row(InlineKeyboardButton(text="🌙 Сменить Луну", callback_data="change_persona"))
     builder.row(InlineKeyboardButton(text="◀️ В главное меню", callback_data="main_menu"))
     return builder.as_markup()
 
@@ -121,6 +122,10 @@ async def change_persona(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("persona:"))
 async def set_persona(callback: CallbackQuery) -> None:
     persona = callback.data.split(":", 1)[1]
+    # callback.data is client-supplied — only known personas reach the DB
+    if persona not in _PERSONA_NAMES:
+        await callback.answer("Выбери Луну с клавиатуры.", show_alert=True)
+        return
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, callback.from_user.id)
         if persona in ("full_moon", "dark_moon") and not is_pro_active(user):

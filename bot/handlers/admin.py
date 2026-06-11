@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime, timezone, timedelta
 from aiogram import Router, Bot
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy import func, select
@@ -78,18 +79,28 @@ async def cmd_broadcast(message: Message, bot: Bot) -> None:
         return
 
     async with async_session_factory() as session:
-        result = await session.execute(select(User.telegram_id))
+        result = await session.execute(
+            select(User.telegram_id).where(User.is_active.is_(True))
+        )
         user_ids = result.scalars().all()
 
     sent = 0
     failed = 0
+    blocked: list[int] = []
     for uid in user_ids:
         try:
             await bot.send_message(uid, text)
             sent += 1
+        except TelegramForbiddenError:
+            blocked.append(uid)
+            failed += 1
         except Exception:
             failed += 1
         await asyncio.sleep(_BROADCAST_DELAY)
+
+    if blocked:
+        async with async_session_factory() as session:
+            await crud.mark_users_inactive(session, blocked)
 
     await message.answer(
         f"✅ Рассылка завершена\n\nОтправлено: `{sent}`\nОшибок: `{failed}`",
@@ -116,13 +127,9 @@ async def cmd_grant_pro(message: Message) -> None:
         return
 
     async with async_session_factory() as session:
-        user = await crud.get_or_create_user(session, target_id)
-        now = datetime.now(timezone.utc)
-        await crud.update_user(
-            session, target_id,
-            is_pro=True,
-            pro_until=now + timedelta(days=days)
-        )
+        await crud.get_or_create_user(session, target_id)
+        # set_pro extends from the current expiry (consistent with paid renewals)
+        await crud.set_pro(session, target_id, "admin", days=days)
 
     await message.answer(
         f"✅ Pro выдан пользователю `{target_id}` на `{days}` дней.",

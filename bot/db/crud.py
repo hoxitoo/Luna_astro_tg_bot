@@ -1,9 +1,10 @@
 import json
-import math
 from datetime import date, datetime, timezone, timedelta
-from sqlalchemy import select, and_, func as sqlfunc
+from sqlalchemy import select, update, and_, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db.models import User, DailyLimit, Payment, Spread
+
+_MSK = timezone(timedelta(hours=3))
 
 
 async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str | None = None) -> User:
@@ -51,14 +52,16 @@ async def increment_horoscope(session: AsyncSession, user_id: int, today: date) 
     await session.commit()
 
 
-async def set_pro(session: AsyncSession, user_id: int, plan: str) -> None:
+async def set_pro(session: AsyncSession, user_id: int, plan: str, days: int | None = None) -> None:
     """Activate or extend Pro subscription.
 
     If the user already has an active subscription, the new period is added
     on top of the current expiry date (not from now) so they don't lose days.
+    `days` overrides the plan's default duration (used by /grant_pro).
     """
     now = datetime.now(timezone.utc)
-    days = {"year": 365, "month": 30, "referral": 7}.get(plan, 30)
+    if days is None:
+        days = {"year": 365, "month": 30, "referral": 7}.get(plan, 30)
 
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
@@ -73,11 +76,33 @@ async def set_pro(session: AsyncSession, user_id: int, plan: str) -> None:
     await update_user(session, user_id, is_pro=True, pro_until=pro_until)
 
 
-async def create_payment(session: AsyncSession, user_id: int, amount: int, plan: str, inv_id: int) -> Payment:
-    payment = Payment(user_id=user_id, amount=amount, plan=plan, robokassa_inv_id=inv_id)
+async def create_payment(session: AsyncSession, user_id: int, amount: int, plan: str) -> Payment:
+    """Create a payment row; InvId = the row's own autoincrement id (collision-free)."""
+    payment = Payment(user_id=user_id, amount=amount, plan=plan)
     session.add(payment)
+    await session.flush()  # populates payment.id
+    payment.robokassa_inv_id = payment.id
     await session.commit()
     await session.refresh(payment)
+    return payment
+
+
+async def get_payment_by_inv_id(session: AsyncSession, inv_id: int) -> Payment | None:
+    result = await session.execute(select(Payment).where(Payment.robokassa_inv_id == inv_id))
+    return result.scalar_one_or_none()
+
+
+async def mark_payment_paid(session: AsyncSession, inv_id: int) -> Payment | None:
+    """Atomic pending→paid transition. Returns the payment only on the FIRST call;
+    a replayed/duplicate callback gets None and must not grant anything."""
+    result = await session.execute(
+        update(Payment)
+        .where(Payment.robokassa_inv_id == inv_id, Payment.status == "pending")
+        .values(status="paid")
+        .returning(Payment)
+    )
+    payment = result.scalar_one_or_none()
+    await session.commit()
     return payment
 
 
@@ -99,6 +124,12 @@ async def use_extra_spread(session: AsyncSession, user_id: int) -> None:
 
 async def apply_referral(session: AsyncSession, user_id: int, referrer_id: int) -> bool:
     """Store referrer and give 7-day Pro bonus to both users. Returns True if bonus applied."""
+    # The referrer must be a real existing user — otherwise /start ref_<any_number>
+    # would mint a free Pro week for every fresh account
+    ref_result = await session.execute(select(User).where(User.telegram_id == referrer_id))
+    if ref_result.scalar_one_or_none() is None:
+        return False
+
     # Mark referred_by on new user
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
@@ -169,23 +200,25 @@ async def get_spread_by_id(session: AsyncSession, spread_id: int, user_id: int) 
 
 
 async def get_users_with_birthday_today(session: AsyncSession) -> list[User]:
-    """Return users whose birth_date month+day match today (MSK)."""
-    from datetime import timezone, timedelta
-    msk = timezone(timedelta(hours=3))
-    today = datetime.now(msk).date()
+    """Return active users whose birth_date month+day match today (MSK)."""
+    today = datetime.now(_MSK).date()
     result = await session.execute(
         select(User).where(
             sqlfunc.extract("month", User.birth_date) == today.month,
             sqlfunc.extract("day", User.birth_date) == today.day,
+            User.is_active.is_(True),
         )
     )
     return result.scalars().all()
 
 
-async def set_payment_status(session: AsyncSession, inv_id: int, status: str) -> Payment | None:
-    result = await session.execute(select(Payment).where(Payment.robokassa_inv_id == inv_id))
-    payment = result.scalar_one_or_none()
-    if payment:
-        payment.status = status
-        await session.commit()
-    return payment
+async def mark_users_inactive(session: AsyncSession, user_ids: list[int]) -> None:
+    """Mark users who blocked the bot so broadcasts skip them."""
+    if not user_ids:
+        return
+    await session.execute(
+        update(User).where(User.telegram_id.in_(user_ids)).values(is_active=False)
+    )
+    await session.commit()
+
+

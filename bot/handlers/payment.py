@@ -1,3 +1,4 @@
+import logging
 from aiohttp.web import Request, Response
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardButton
@@ -5,9 +6,10 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.config import settings
 from bot.db.session import async_session_factory
 from bot.db import crud
-from bot.services.payment_service import generate_inv_id, generate_payment_url, verify_result_signature
+from bot.services.payment_service import generate_payment_url, verify_result_signature
 from bot.keyboards.inline import paywall_menu
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 
@@ -33,13 +35,12 @@ async def _create_payment_link(callback: CallbackQuery, plan: str) -> None:
     plan_names = {"month": "месяц", "year": "год", "pack": "пакет +10 раскладов"}
 
     amount = amount_map[plan]
-    inv_id = generate_inv_id()
     user_id = callback.from_user.id
 
     async with async_session_factory() as session:
-        await crud.create_payment(session, user_id, amount, plan, inv_id)
+        payment = await crud.create_payment(session, user_id, amount, plan)
 
-    url = generate_payment_url(user_id, amount, inv_id)
+    url = generate_payment_url(amount, payment.robokassa_inv_id)
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text=f"💳 Оплатить {amount} ₽", url=url))
@@ -74,21 +75,52 @@ async def pay_pack(callback: CallbackQuery) -> None:
 
 
 async def robokassa_result_handler(request: Request) -> Response:
-    """Webhook endpoint for Robokassa ResultURL (POST)."""
+    """Webhook endpoint for Robokassa ResultURL (POST).
+
+    Idempotent: only the first pending→paid transition grants the purchase.
+    Robokassa retries this callback if it doesn't get OK{inv_id} — duplicates
+    (and replay attempts) are acknowledged but grant nothing.
+    """
     data = await request.post()
     out_sum = data.get("OutSum", "")
-    inv_id = data.get("InvId", "")
+    inv_id_raw = data.get("InvId", "")
     signature = data.get("SignatureValue", "")
 
-    if not verify_result_signature(out_sum, inv_id, signature):
+    try:
+        inv_id = int(inv_id_raw)
+    except (ValueError, TypeError):
+        return Response(text="bad invid", status=400)
+
+    if not verify_result_signature(out_sum, inv_id_raw, signature):
+        logger.warning(f"Robokassa: bad signature for InvId={inv_id} from {request.remote}")
         return Response(text="bad sign", status=400)
 
     async with async_session_factory() as session:
-        payment = await crud.set_payment_status(session, int(inv_id), "paid")
-        if payment:
-            if payment.plan in ("month", "year"):
-                await crud.set_pro(session, payment.user_id, payment.plan)
-            elif payment.plan == "pack":
-                await crud.add_extra_spreads(session, payment.user_id, 10)
+        payment = await crud.get_payment_by_inv_id(session, inv_id)
+        if payment is None:
+            logger.warning(f"Robokassa: unknown InvId={inv_id}")
+            return Response(text="unknown invid", status=400)
+
+        # Defense in depth: the paid amount must match what we billed
+        try:
+            paid_amount = float(out_sum)
+        except ValueError:
+            return Response(text="bad outsum", status=400)
+        if int(paid_amount) != payment.amount:
+            logger.warning(
+                f"Robokassa: amount mismatch InvId={inv_id}: paid={out_sum}, expected={payment.amount}"
+            )
+            return Response(text="bad amount", status=400)
+
+        claimed = await crud.mark_payment_paid(session, inv_id)
+        if claimed is None:
+            # Already processed (duplicate/replay) — ack so Robokassa stops retrying
+            return Response(text=f"OK{inv_id}")
+
+        if claimed.plan in ("month", "year"):
+            await crud.set_pro(session, claimed.user_id, claimed.plan)
+        elif claimed.plan == "pack":
+            await crud.add_extra_spreads(session, claimed.user_id, 10)
+        logger.info(f"Payment processed: InvId={inv_id} user={claimed.user_id} plan={claimed.plan}")
 
     return Response(text=f"OK{inv_id}")

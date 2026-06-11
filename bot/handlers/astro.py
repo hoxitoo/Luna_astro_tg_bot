@@ -40,7 +40,17 @@ async def daily_horoscope(callback: CallbackQuery, bot: Bot) -> None:
     today = datetime.now(msk).strftime("%d %B %Y")
     name = user.name or callback.from_user.first_name or "незнакомка"
 
-    text = await claude_service.daily_horoscope(name, user.zodiac_sign, today, persona=user.luna_persona)
+    try:
+        text = await claude_service.daily_horoscope(
+            name, user.zodiac_sign, today, persona=user.luna_persona
+        )
+    except claude_service.ClaudeUnavailable:
+        # Fallback shown for free — don't burn the user's 1 daily horoscope
+        await callback.message.edit_text(
+            claude_service.get_fallback("horoscope"),
+            parse_mode="Markdown", reply_markup=back_to_menu()
+        )
+        return
 
     async with async_session_factory() as session:
         await limit_service.use_horoscope(session, user.telegram_id)
@@ -55,7 +65,10 @@ async def card_of_day(callback: CallbackQuery, bot: Bot) -> None:
     today = datetime.now(msk).strftime("%d %B %Y")
 
     card = card_engine.draw(1)[0]
-    text = await claude_service.card_of_day(card, today)
+    try:
+        text = await claude_service.card_of_day(card, today)
+    except claude_service.ClaudeUnavailable:
+        text = claude_service.get_fallback("card_of_day")
 
     card_header = f"🃏 *{card_display_name(card)}*\n\n"
     await callback.message.edit_text(

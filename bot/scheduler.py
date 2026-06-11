@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from aiogram import Bot
+from aiogram.exceptions import TelegramForbiddenError
 from sqlalchemy import select
 
 from bot.db.session import async_session_factory
@@ -74,12 +75,23 @@ _MERCURY_RETROGRADE_STARTS: list[date] = [
 
 async def _get_all_user_ids() -> list[int]:
     async with async_session_factory() as session:
-        result = await session.execute(select(User.telegram_id))
+        result = await session.execute(
+            select(User.telegram_id).where(User.is_active.is_(True))
+        )
         return result.scalars().all()
 
 
+async def _mark_blocked(user_ids: list[int]) -> None:
+    """Mark users who blocked the bot so future broadcasts skip them."""
+    if not user_ids:
+        return
+    async with async_session_factory() as session:
+        await crud.mark_users_inactive(session, user_ids)
+    logger.info(f"Marked {len(user_ids)} users inactive (blocked the bot)")
+
+
 async def _broadcast(bot: Bot, text: str, lock_key: str) -> tuple[int, int]:
-    """Send message to all users with flood-control delay.
+    """Send message to all active users with flood-control delay.
 
     Uses Redis distributed lock to prevent duplicate sends (e.g. on restart).
     Returns (sent_count, failed_count).
@@ -92,14 +104,19 @@ async def _broadcast(bot: Bot, text: str, lock_key: str) -> tuple[int, int]:
 
     user_ids = await _get_all_user_ids()
     sent = failed = 0
+    blocked: list[int] = []
     for uid in user_ids:
         try:
             await bot.send_message(uid, text, parse_mode="Markdown")
             sent += 1
+        except TelegramForbiddenError:
+            blocked.append(uid)
+            failed += 1
         except Exception:
             failed += 1
         await asyncio.sleep(_BROADCAST_DELAY)
 
+    await _mark_blocked(blocked)
     logger.info(f"Broadcast '{lock_key}': sent={sent}, failed={failed}")
     return sent, failed
 
@@ -111,7 +128,10 @@ async def _broadcast_card_of_day(bot: Bot) -> None:
     today = datetime.now(MSK).strftime("%Y-%m-%d")
     card = card_engine.draw(1)[0]
     today_fmt = datetime.now(MSK).strftime("%d %B %Y")
-    text_body = await claude_service.card_of_day(card, today_fmt)
+    try:
+        text_body = await claude_service.card_of_day(card, today_fmt)
+    except claude_service.ClaudeUnavailable:
+        text_body = claude_service.get_fallback("card_of_day")
     text = f"🃏 *{card_display_name(card)}*\n\n{text_body}"
     await _broadcast(bot, text, f"broadcast:card_of_day:{today}")
 
@@ -161,14 +181,22 @@ async def _check_mercury_retrograde(bot: Bot) -> None:
 
 async def _send_birthday_spreads(bot: Bot) -> None:
     """Send a personal Solar Return spread to each user whose birthday is today (MSK)."""
+    today = datetime.now(MSK).strftime("%Y-%m-%d")
+    # Same distributed lock as other broadcasts — a birthday message must never duplicate
+    redis = get_redis()
+    acquired = await redis.set(f"broadcast:birthday:{today}", 1, ex=3600 * 12, nx=True)
+    if not acquired:
+        logger.info("Birthday spreads already sent today, skipping.")
+        return
+
     async with async_session_factory() as session:
         users = await crud.get_users_with_birthday_today(session)
 
     if not users:
         return
 
-    from bot.db import crud as db_crud
     sent = failed = 0
+    blocked: list[int] = []
     for user in users:
         try:
             cards = card_engine.draw(3)
@@ -184,16 +212,21 @@ async def _send_birthday_spreads(bot: Bot) -> None:
                 parse_mode="Markdown"
             )
             async with async_session_factory() as session:
-                await db_crud.save_spread(
+                await crud.save_spread(
                     session, user.telegram_id, "birthday", text,
                     cards_json=cards
                 )
             sent += 1
+        except TelegramForbiddenError:
+            blocked.append(user.telegram_id)
+            failed += 1
         except Exception as e:
+            # incl. ClaudeUnavailable — a canned birthday message is worse than none
             logger.warning(f"Birthday spread failed for {user.telegram_id}: {e}")
             failed += 1
         await asyncio.sleep(_BROADCAST_DELAY)
 
+    await _mark_blocked(blocked)
     logger.info(f"Birthday spreads: sent={sent}, failed={failed}")
 
 
@@ -224,14 +257,19 @@ async def _check_subscription_expiry(bot: Bot) -> None:
     )
 
     sent = failed = 0
+    blocked: list[int] = []
     for user in expiring_users:
         try:
             await bot.send_message(user.telegram_id, text)
             sent += 1
+        except TelegramForbiddenError:
+            blocked.append(user.telegram_id)
+            failed += 1
         except Exception:
             failed += 1
         await asyncio.sleep(_BROADCAST_DELAY)
 
+    await _mark_blocked(blocked)
     logger.info(f"Subscription expiry reminders: sent={sent}, failed={failed}")
 
 
