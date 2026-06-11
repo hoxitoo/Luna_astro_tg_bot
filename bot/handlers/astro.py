@@ -40,7 +40,7 @@ async def daily_horoscope(callback: CallbackQuery, bot: Bot) -> None:
     today = datetime.now(msk).strftime("%d %B %Y")
     name = user.name or callback.from_user.first_name or "незнакомка"
 
-    text = await claude_service.daily_horoscope(name, user.zodiac_sign, today)
+    text = await claude_service.daily_horoscope(name, user.zodiac_sign, today, persona=user.luna_persona)
 
     async with async_session_factory() as session:
         await limit_service.use_horoscope(session, user.telegram_id)

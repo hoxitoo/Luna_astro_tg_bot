@@ -7,6 +7,7 @@ def main_menu() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="🃏 Расклад Таро", callback_data="tarot_menu"))
     builder.row(InlineKeyboardButton(text="⭐ Гороскоп на сегодня", callback_data="horoscope"))
     builder.row(InlineKeyboardButton(text="🌙 Карта дня", callback_data="card_of_day"))
+    builder.row(InlineKeyboardButton(text="📖 Мой дневник", callback_data="history_page:1"))
     builder.row(InlineKeyboardButton(text="💎 Pro-подписка", callback_data="paywall"))
     return builder.as_markup()
 
@@ -15,8 +16,36 @@ def tarot_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🔮 Расклад на 3 карты", callback_data="tarot_3"))
     builder.row(InlineKeyboardButton(text="💞 Расклад на отношения", callback_data="tarot_relations"))
+    builder.row(InlineKeyboardButton(text="🌑 Расклад на прошлое", callback_data="tarot_past"))
     builder.row(InlineKeyboardButton(text="📅 Расклад на год (Pro)", callback_data="tarot_year"))
     builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="main_menu"))
+    return builder.as_markup()
+
+
+def persona_keyboard(is_pro: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="🌙 Молодая Луна — загадочная, образная",
+        callback_data="persona:young_moon"
+    ))
+    if is_pro:
+        builder.row(InlineKeyboardButton(
+            text="🌕 Полная Луна — тёплая, принимающая",
+            callback_data="persona:full_moon"
+        ))
+        builder.row(InlineKeyboardButton(
+            text="🌑 Тёмная Луна — прямая, без прикрас",
+            callback_data="persona:dark_moon"
+        ))
+    else:
+        builder.row(InlineKeyboardButton(
+            text="🌕 Полная Луна (Pro) — тёплая, принимающая",
+            callback_data="persona_locked"
+        ))
+        builder.row(InlineKeyboardButton(
+            text="🌑 Тёмная Луна (Pro) — прямая, без прикрас",
+            callback_data="persona_locked"
+        ))
     return builder.as_markup()
 
 

@@ -27,6 +27,7 @@ PAYWALL_TEXT = (
 class TarotFSM(StatesGroup):
     waiting_question_3 = State()
     waiting_question_relations = State()
+    waiting_past_situation = State()
 
 
 def _after_spread_keyboard(show_name_prompt: bool) -> object:
@@ -98,12 +99,16 @@ async def tarot_3_interpret(message: Message, state: FSMContext, bot: Bot) -> No
     cards = card_engine.draw(3)
     name = user.name or message.from_user.first_name or "незнакомка"
 
-    interpretation = await claude_service.interpret_tarot_3(cards, question, name)
+    interpretation = await claude_service.interpret_tarot_3(cards, question, name, persona=user.luna_persona)
     text = f"_{cards_line(cards)}_\n\n{interpretation}"
 
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, message.from_user.id)
         await limit_service.use_tarot(session, user)
+        await crud.save_spread(
+            session, user.telegram_id, "tarot_3", interpretation,
+            question=question, cards_json=cards
+        )
 
     # Show "tell me your name" prompt for anonymous users after their first spread
     await message.answer(
@@ -153,12 +158,78 @@ async def tarot_relations_interpret(message: Message, state: FSMContext, bot: Bo
     cards = card_engine.draw(5)
     name = user.name or message.from_user.first_name or "незнакомка"
 
-    interpretation = await claude_service.interpret_relationship_5(cards, question, name)
+    interpretation = await claude_service.interpret_relationship_5(cards, question, name, persona=user.luna_persona)
     text = f"_{cards_line(cards)}_\n\n{interpretation}"
 
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(session, message.from_user.id)
         await limit_service.use_tarot(session, user)
+        await crud.save_spread(
+            session, user.telegram_id, "relations_5", interpretation,
+            question=question, cards_json=cards
+        )
+
+    await message.answer(
+        text,
+        parse_mode="Markdown",
+        reply_markup=_after_spread_keyboard(show_name_prompt=not user.name)
+    )
+
+
+@router.callback_query(F.data == "tarot_past")
+async def tarot_past_start(callback: CallbackQuery, state: FSMContext) -> None:
+    async with async_session_factory() as session:
+        user = await crud.get_or_create_user(session, callback.from_user.id)
+        can = await limit_service.can_do_tarot(session, user)
+
+    if not can:
+        await callback.message.edit_text(PAYWALL_TEXT, parse_mode="Markdown", reply_markup=paywall_menu())
+        return
+
+    await state.set_state(TarotFSM.waiting_past_situation)
+    await callback.message.edit_text(
+        "🌑 *Расклад на прошлое.*\n\n"
+        "Опиши ситуацию, которая уже произошла.\n"
+        "Что это было — и чем закончилось?\n\n"
+        "_Можно коротко. Главное — честно._",
+        parse_mode="Markdown",
+        reply_markup=cancel_button()
+    )
+
+
+@router.message(TarotFSM.waiting_past_situation)
+async def tarot_past_interpret(message: Message, state: FSMContext, bot: Bot) -> None:
+    situation = message.text.strip()
+
+    if err := validate_question(situation):
+        await message.answer(err, reply_markup=cancel_button())
+        await state.set_state(TarotFSM.waiting_past_situation)
+        return
+
+    await state.clear()
+
+    async with async_session_factory() as session:
+        user = await crud.get_or_create_user(session, message.from_user.id)
+        can = await limit_service.can_do_tarot(session, user)
+
+    if not can:
+        await message.answer(PAYWALL_TEXT, parse_mode="Markdown", reply_markup=paywall_menu())
+        return
+
+    await bot.send_chat_action(message.chat.id, "typing")
+    cards = card_engine.draw(3)
+    name = user.name or message.from_user.first_name or "незнакомка"
+
+    interpretation = await claude_service.interpret_past_spread(cards, situation, name, persona=user.luna_persona)
+    text = f"_{cards_line(cards)}_\n\n{interpretation}"
+
+    async with async_session_factory() as session:
+        user = await crud.get_or_create_user(session, message.from_user.id)
+        await limit_service.use_tarot(session, user)
+        await crud.save_spread(
+            session, user.telegram_id, "past", interpretation,
+            question=situation, cards_json=cards
+        )
 
     await message.answer(
         text,
@@ -186,7 +257,11 @@ async def tarot_year(callback: CallbackQuery, bot: Bot) -> None:
     name = user.name or callback.from_user.first_name or "незнакомка"
     zodiac = user.zodiac_sign or "неизвестный знак"
 
-    interpretation = await claude_service.yearly_forecast_12(name, zodiac, cards)
+    interpretation = await claude_service.yearly_forecast_12(name, zodiac, cards, persona=user.luna_persona)
+    async with async_session_factory() as session:
+        await crud.save_spread(
+            session, user.telegram_id, "year_12", interpretation, cards_json=cards
+        )
     # Yearly forecast can be 400+ words — guard against Telegram's 4096 char limit
     await callback.message.edit_text(
         truncate(interpretation, max_len=4096),

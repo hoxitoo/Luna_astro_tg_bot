@@ -21,5 +21,5 @@ async def handle_free_text(message: Message, state: FSMContext, bot: Bot) -> Non
 
     await bot.send_chat_action(message.chat.id, "typing")
     name = user.name or message.from_user.first_name or "незнакомка"
-    response = await claude_service.free_chat(name, message.text.strip())
+    response = await claude_service.free_chat(name, message.text.strip(), persona=user.luna_persona)
     await message.answer(response, parse_mode="Markdown", reply_markup=main_menu())

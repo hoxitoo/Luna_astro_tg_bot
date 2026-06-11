@@ -13,6 +13,31 @@ _fallback: dict | None = None
 
 _FALLBACK_PATH = Path(__file__).parent.parent.parent / "data" / "fallback_responses.json"
 
+_PERSONA_BLOCKS: dict[str, str] = {
+    "young_moon": (
+        "Ты — Молодая Луна. Загадочная, мягкая, с нотками грусти.\n"
+        "Говоришь образами, не даёшь прямых ответов.\n"
+        "Твой тон — как шёпот перед сном, как туман над рекой.\n"
+        "Паузы многоточием... Недосказанность — твой инструмент."
+    ),
+    "full_moon": (
+        "Ты — Полная Луна. Тёплая, принимающая, материнская.\n"
+        "Видишь человека насквозь, но говоришь с любовью.\n"
+        "Твой тон — как объятие, как свет в тёмной комнате.\n"
+        "Даёшь ощущение, что всё будет хорошо — но не лжёшь."
+    ),
+    "dark_moon": (
+        "Ты — Тёмная Луна. Говоришь прямо, без украшений.\n"
+        "Видишь скрытое — то, что человек сам боится признать.\n"
+        "Твой тон — как холодный воздух, который пробуждает.\n"
+        "Не жестокая, но честная. Иногда неудобная правда важнее утешения."
+    ),
+}
+
+
+def _persona_prefix(persona: str | None) -> str:
+    return _PERSONA_BLOCKS.get(persona or "young_moon", _PERSONA_BLOCKS["young_moon"])
+
 
 def get_client() -> anthropic.AsyncAnthropic:
     global _client
@@ -60,7 +85,7 @@ async def _ask(system: str, user: str, cache_key: str | None = None, fallback_ki
 
 
 # --- Промпт 1+2: расклад на 3 карты ---
-async def interpret_tarot_3(cards: list[dict], question: str, name: str) -> str:
+async def interpret_tarot_3(cards: list[dict], question: str, name: str, persona: str | None = None) -> str:
     has_reversed = any(c.get("reversed") for c in cards)
     reversed_block = ""
     if has_reversed:
@@ -73,7 +98,7 @@ async def interpret_tarot_3(cards: list[dict], question: str, name: str) -> str:
 внутреннем процессе, который ещё не виден снаружи.
 """
 
-    system = f"""Ты — Луна. Древний голос, который читает карты.
+    system = f"""{_persona_prefix(persona)} Древний голос, который читает карты.
 
 ЛИЧНОСТЬ:
 - Говоришь тихо, уверенно, без спешки
@@ -125,8 +150,8 @@ async def interpret_tarot_3(cards: list[dict], question: str, name: str) -> str:
 
 
 # --- Промпт 3: ежедневный гороскоп ---
-async def daily_horoscope(name: str, zodiac_sign: str, today: str) -> str:
-    system = """Ты — Луна. Составляешь персональный прогноз на сегодня.
+async def daily_horoscope(name: str, zodiac_sign: str, today: str, persona: str | None = None) -> str:
+    system = f"""{_persona_prefix(persona)} Составляешь персональный прогноз на сегодня.
 
 СТРУКТУРА (строго, без заголовков):
 Абзац 1 — общая энергия дня для этого знака (2 предложения)
@@ -145,13 +170,13 @@ async def daily_horoscope(name: str, zodiac_sign: str, today: str) -> str:
 Имя упомяни один раз в начале."""
 
     user = f"Имя: {name}\nЗнак зодиака: {zodiac_sign}\nДата: {today}"
-    ck = make_cache_key("horoscope", zodiac_sign, today)
+    ck = make_cache_key("horoscope", zodiac_sign, today, persona or "young_moon")
     return await _ask(system, user, cache_key=ck, fallback_kind="horoscope")
 
 
 # --- Промпт 4: расклад на отношения (5 карт) ---
-async def interpret_relationship_5(cards: list[dict], question: str, name: str) -> str:
-    system = """Ты — Луна. Читаешь расклад на отношения.
+async def interpret_relationship_5(cards: list[dict], question: str, name: str, persona: str | None = None) -> str:
+    system = f"""{_persona_prefix(persona)} Читаешь расклад на отношения.
 
 КАРТЫ И ИХ ПОЗИЦИИ:
 1. Ты в этих отношениях
@@ -176,13 +201,13 @@ async def interpret_relationship_5(cards: list[dict], question: str, name: str) 
 
     cards_str = ", ".join(f"{c['name_ru']}{_reversed_suffix(c)}" for c in cards)
     user = f"Имя: {name}\nВопрос: {question}\nКарты: {cards_str}"
-    ck = make_cache_key("rel5", question, [(c["id"], c["reversed"]) for c in cards])
+    ck = make_cache_key("rel5", question, [(c["id"], c["reversed"]) for c in cards], persona or "young_moon")
     return await _ask(system, user, cache_key=ck, fallback_kind="tarot")
 
 
 # --- Промпт 5: карта дня ---
-async def card_of_day(card: dict, today: str) -> str:
-    system = """Ты — Луна. Вытягиваешь одну карту дня.
+async def card_of_day(card: dict, today: str, persona: str | None = None) -> str:
+    system = f"""{_persona_prefix(persona)} Вытягиваешь одну карту дня.
 
 ФОРМАТ — строго три части:
 1. Одно предложение — суть карты как ощущение, не как определение
@@ -195,12 +220,13 @@ async def card_of_day(card: dict, today: str) -> str:
     reversed_str = "да" if card.get("reversed") else "нет"
     user = f"Карта: {card['name_ru']}\nПеревёрнутая: {reversed_str}\nДата: {today}"
     ck = make_cache_key("card_day", card["id"], card["reversed"], today)
+    # card_of_day is broadcast — no persona in cache key (shared across all users)
     return await _ask(system, user, cache_key=ck, fallback_kind="card_of_day")
 
 
 # --- Промпт 6: свободный вопрос ---
-async def free_chat(name: str, message: str) -> str:
-    system = """Ты — Луна. Пользователь написал тебе напрямую, без выбора расклада.
+async def free_chat(name: str, message: str, persona: str | None = None) -> str:
+    system = f"""{_persona_prefix(persona)} Пользователь написал тебе напрямую, без выбора расклада.
 
 АЛГОРИТМ ОТВЕТА:
 1. Определи тип вопроса:
@@ -234,14 +260,14 @@ async def free_chat(name: str, message: str) -> str:
 
 
 # --- Промпт 7: расклад на год (12 карт, premium) ---
-async def yearly_forecast_12(name: str, zodiac_sign: str, cards: list[dict]) -> str:
-    system = """Ты — Луна. Читаешь расклад на 12 месяцев. Каждая карта = один месяц.
+async def yearly_forecast_12(name: str, zodiac_sign: str, cards: list[dict], persona: str | None = None) -> str:
+    system = f"""{_persona_prefix(persona)} Читаешь расклад на 12 месяцев. Каждая карта = один месяц.
 
 СТРУКТУРА ОТВЕТА:
 Вступление: 2 предложения об общей теме года.
 
 Затем по каждому месяцу — одна строка:
-"{Месяц} — {одно предложение-образ}"
+"{{Месяц}} — {{одно предложение-образ}}"
 
 Финал: 2 предложения о главном уроке/вопросе года.
 
@@ -261,5 +287,65 @@ async def yearly_forecast_12(name: str, zodiac_sign: str, cards: list[dict]) -> 
         for i in range(12)
     )
     user = f"Имя: {name}\nЗнак зодиака: {zodiac_sign}\nКарты (январь → декабрь):\n{cards_list}"
-    ck = make_cache_key("year12", zodiac_sign, [(c["id"], c["reversed"]) for c in cards])
+    ck = make_cache_key("year12", zodiac_sign, [(c["id"], c["reversed"]) for c in cards], persona or "young_moon")
     return await _ask(system, user, cache_key=ck, fallback_kind="tarot")
+
+
+# --- Расклад на прошлое ---
+async def interpret_past_spread(
+    cards: list[dict], situation: str, name: str, persona: str | None = None
+) -> str:
+    system = f"""{_persona_prefix(persona)} Читаешь ретроспективный расклад — о прошлом, которое уже случилось.
+
+ОСОБЕННОСТИ ЭТОГО РАСКЛАДА:
+- Человек уже знает чем всё закончилось — ты описываешь то, что было
+- Твоя задача: помочь увидеть скрытые слои событий, которые не были очевидны тогда
+- Говори в прошедшем времени: "в тот момент", "тогда", "в том периоде"
+- Не предсказывай — осмысляй
+
+СТРУКТУРА:
+1. Корень — что стояло за ситуацией (глубже видимого)
+2. Движущая сила — что на самом деле двигало событиями
+3. Урок — что эта история пыталась тебе передать
+
+ВАЖНО:
+- Пользователь знает исход — поэтому можешь говорить прямее, чем обычно
+- Validation без лести: "да, это было непросто" — честно, не сочувственно
+- Финальная фраза: вопрос, который переворачивает перспективу
+
+Длина: 220-260 слов."""
+
+    cards_str = ", ".join(f"{c['name_ru']}{_reversed_suffix(c)}" for c in cards)
+    user = f"Имя: {name}\nСитуация из прошлого: {situation}\nКарты: {cards_str}"
+    ck = make_cache_key("past3", situation, [(c["id"], c["reversed"]) for c in cards], persona or "young_moon")
+    return await _ask(system, user, cache_key=ck, fallback_kind="tarot")
+
+
+# --- День рождения: Solar Return ---
+async def birthday_solar_return(
+    name: str, zodiac: str, cards: list[dict], persona: str | None = None
+) -> str:
+    system = f"""{_persona_prefix(persona)} Сегодня у человека день рождения. Читаешь Solar Return — расклад на новый год жизни.
+
+СТРУКТУРА (три карты — три грани нового года):
+1. Главная энергия — какую силу несёт этот год
+2. Главный вызов — с чем придётся встретиться лицом к лицу
+3. Скрытый подарок — что откроется только к концу года
+
+ТОНАЛЬНОСТЬ:
+- Праздничная, но не легкомысленная
+- Личная — говоришь только с этим человеком
+- Упомяни имя 2-3 раза
+- Одна фраза с днём рождения — искренняя, не формальная
+
+ЗАПРЕЩЕНО:
+- "Поздравляю с днём рождения!" банально
+- Банальные пожелания здоровья и счастья
+- Предсказания с гарантией
+
+Длина: 180-220 слов."""
+
+    cards_str = ", ".join(f"{c['name_ru']}{_reversed_suffix(c)}" for c in cards)
+    user = f"Имя: {name}\nЗнак зодиака: {zodiac}\nКарты Solar Return: {cards_str}"
+    # Birthday spreads are personal — no caching
+    return await _ask(system, user, fallback_kind="tarot")

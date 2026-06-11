@@ -1,7 +1,9 @@
+import json
+import math
 from datetime import date, datetime, timezone, timedelta
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
-from bot.db.models import User, DailyLimit, Payment
+from bot.db.models import User, DailyLimit, Payment, Spread
 
 
 async def get_or_create_user(session: AsyncSession, telegram_id: int, username: str | None = None) -> User:
@@ -112,6 +114,72 @@ async def apply_referral(session: AsyncSession, user_id: int, referrer_id: int) 
         await set_pro(session, uid, "referral")  # set_pro handles extension
 
     return True
+
+
+async def save_spread(
+    session: AsyncSession,
+    user_id: int,
+    spread_type: str,
+    interpretation: str,
+    *,
+    question: str | None = None,
+    topic: str | None = None,
+    cards_json: list | None = None,
+) -> Spread:
+    spread = Spread(
+        user_id=user_id,
+        spread_type=spread_type,
+        interpretation=interpretation,
+        question=question,
+        topic=topic,
+        cards_json=json.dumps(cards_json, ensure_ascii=False) if cards_json is not None else None,
+    )
+    session.add(spread)
+    await session.commit()
+    await session.refresh(spread)
+    return spread
+
+
+async def get_spreads_page(
+    session: AsyncSession,
+    user_id: int,
+    page: int,
+    per_page: int = 8,
+) -> tuple[list[Spread], int]:
+    count_result = await session.execute(
+        select(sqlfunc.count()).select_from(Spread).where(Spread.user_id == user_id)
+    )
+    total = count_result.scalar_one()
+    offset = (page - 1) * per_page
+    result = await session.execute(
+        select(Spread)
+        .where(Spread.user_id == user_id)
+        .order_by(Spread.created_at.desc())
+        .limit(per_page)
+        .offset(offset)
+    )
+    return result.scalars().all(), total
+
+
+async def get_spread_by_id(session: AsyncSession, spread_id: int, user_id: int) -> Spread | None:
+    result = await session.execute(
+        select(Spread).where(Spread.id == spread_id, Spread.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_users_with_birthday_today(session: AsyncSession) -> list[User]:
+    """Return users whose birth_date month+day match today (MSK)."""
+    from datetime import timezone, timedelta
+    msk = timezone(timedelta(hours=3))
+    today = datetime.now(msk).date()
+    result = await session.execute(
+        select(User).where(
+            sqlfunc.extract("month", User.birth_date) == today.month,
+            sqlfunc.extract("day", User.birth_date) == today.day,
+        )
+    )
+    return result.scalars().all()
 
 
 async def set_payment_status(session: AsyncSession, inv_id: int, status: str) -> Payment | None:

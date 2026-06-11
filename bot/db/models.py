@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -19,11 +19,27 @@ class User(Base):
     is_pro: Mapped[bool] = mapped_column(Boolean, default=False)
     pro_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     extra_spreads: Mapped[int] = mapped_column(Integer, default=0)
+    luna_persona: Mapped[str] = mapped_column(String(16), default="young_moon")
     referred_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     referral_bonus_given: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class Spread(Base):
+    __tablename__ = "spreads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    spread_type: Mapped[str] = mapped_column(String(32))  # tarot_3|relations_5|year_12|past|birthday
+    question: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    topic: Mapped[str | None] = mapped_column(String(128), nullable=True)  # for "Luna remembers"
+    cards_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interpretation: Mapped[str] = mapped_column(Text)
 
 
 class DailyLimit(Base):

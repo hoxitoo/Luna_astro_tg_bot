@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from bot.db.session import async_session_factory
 from bot.db.models import User
+from bot.db import crud
 from bot.services.card_engine import card_engine
 from bot.services import claude_service
 from bot.services.cache_service import get_redis
@@ -158,6 +159,44 @@ async def _check_mercury_retrograde(bot: Bot) -> None:
     await _broadcast(bot, text, f"broadcast:mercury_rx:{today}")
 
 
+async def _send_birthday_spreads(bot: Bot) -> None:
+    """Send a personal Solar Return spread to each user whose birthday is today (MSK)."""
+    async with async_session_factory() as session:
+        users = await crud.get_users_with_birthday_today(session)
+
+    if not users:
+        return
+
+    from bot.db import crud as db_crud
+    sent = failed = 0
+    for user in users:
+        try:
+            cards = card_engine.draw(3)
+            name = user.name or "незнакомка"
+            zodiac = user.zodiac_sign or "неизвестный знак"
+            text = await claude_service.birthday_solar_return(
+                name, zodiac, cards, persona=user.luna_persona
+            )
+            cards_header = " · ".join(c["name_ru"] for c in cards)
+            await bot.send_message(
+                user.telegram_id,
+                f"🎂 *{cards_header}*\n\n{text}",
+                parse_mode="Markdown"
+            )
+            async with async_session_factory() as session:
+                await db_crud.save_spread(
+                    session, user.telegram_id, "birthday", text,
+                    cards_json=cards
+                )
+            sent += 1
+        except Exception as e:
+            logger.warning(f"Birthday spread failed for {user.telegram_id}: {e}")
+            failed += 1
+        await asyncio.sleep(_BROADCAST_DELAY)
+
+    logger.info(f"Birthday spreads: sent={sent}, failed={failed}")
+
+
 async def _check_subscription_expiry(bot: Bot) -> None:
     """Remind users whose Pro subscription expires in exactly 3 days."""
     now = datetime.now(timezone.utc)
@@ -226,6 +265,12 @@ def create_scheduler(bot: Bot) -> AsyncIOScheduler:
         _check_subscription_expiry,
         trigger=CronTrigger(hour=12, minute=0),
         args=[bot], id="sub_expiry", replace_existing=True,
+    )
+    # Birthday Solar Return spreads — 08:00 MSK
+    scheduler.add_job(
+        _send_birthday_spreads,
+        trigger=CronTrigger(hour=8, minute=0),
+        args=[bot], id="birthday_spreads", replace_existing=True,
     )
 
     return scheduler

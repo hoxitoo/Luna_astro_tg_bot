@@ -8,7 +8,7 @@ from bot.config import settings
 from bot.db.session import async_session_factory
 from bot.db import crud
 from bot.services.limit_service import is_pro_active, remaining_tarot
-from bot.keyboards.inline import main_menu
+from bot.keyboards.inline import main_menu, persona_keyboard
 
 router = Router()
 
@@ -30,10 +30,19 @@ HELP_TEXT = (
 )
 
 
-def _profile_keyboard(has_name: bool) -> object:
+_PERSONA_NAMES = {
+    "young_moon": "🌙 Молодая Луна",
+    "full_moon": "🌕 Полная Луна",
+    "dark_moon": "🌑 Тёмная Луна",
+}
+
+
+def _profile_keyboard(has_name: bool, is_pro: bool = False) -> object:
     builder = InlineKeyboardBuilder()
     if not has_name:
         builder.row(InlineKeyboardButton(text="📝 Настроить профиль", callback_data="setup_profile"))
+    if is_pro:
+        builder.row(InlineKeyboardButton(text="🌙 Сменить Луну", callback_data="change_persona"))
     builder.row(InlineKeyboardButton(text="◀️ В главное меню", callback_data="main_menu"))
     return builder.as_markup()
 
@@ -77,11 +86,14 @@ async def cmd_profile(message: Message) -> None:
     else:
         status = f"🆓 Бесплатно ({remaining} раскл. сегодня)"
 
+    pro_active = is_pro_active(user)
+    persona = _PERSONA_NAMES.get(user.luna_persona or "young_moon", "🌙 Молодая Луна")
     ref_link = _referral_link(message.from_user.id)
     text = (
         f"👤 *Профиль*\n\n"
         f"Имя: {name}\n"
         f"Знак: {zodiac}\n"
+        f"Луна: {persona}\n"
         f"Статус: {status}\n\n"
         f"🌙 *Реферальная ссылка:*\n"
         f"`{ref_link}`\n"
@@ -90,5 +102,44 @@ async def cmd_profile(message: Message) -> None:
     await message.answer(
         text,
         parse_mode="Markdown",
-        reply_markup=_profile_keyboard(has_name=bool(user.name))
+        reply_markup=_profile_keyboard(has_name=bool(user.name), is_pro=pro_active)
+    )
+
+
+@router.callback_query(F.data == "change_persona")
+async def change_persona(callback: CallbackQuery) -> None:
+    async with async_session_factory() as session:
+        user = await crud.get_or_create_user(session, callback.from_user.id)
+
+    await callback.message.edit_text(
+        "🌙 Выбери свою Луну.\n\n"
+        "Каждый архетип — разный голос, разный взгляд на карты.",
+        reply_markup=persona_keyboard(is_pro=is_pro_active(user))
+    )
+
+
+@router.callback_query(F.data.startswith("persona:"))
+async def set_persona(callback: CallbackQuery) -> None:
+    persona = callback.data.split(":", 1)[1]
+    async with async_session_factory() as session:
+        user = await crud.get_or_create_user(session, callback.from_user.id)
+        if persona in ("full_moon", "dark_moon") and not is_pro_active(user):
+            await callback.answer(
+                "Этот архетип доступен только в Pro-подписке.", show_alert=True
+            )
+            return
+        await crud.update_user(session, callback.from_user.id, luna_persona=persona)
+
+    names = {"young_moon": "Молодая Луна", "full_moon": "Полная Луна", "dark_moon": "Тёмная Луна"}
+    await callback.message.edit_text(
+        f"🌙 Теперь ты разговариваешь с *{names.get(persona, 'Луной')}*.",
+        parse_mode="Markdown",
+        reply_markup=main_menu()
+    )
+
+
+@router.callback_query(F.data == "persona_locked")
+async def persona_locked(callback: CallbackQuery) -> None:
+    await callback.answer(
+        "Этот архетип доступен только в Pro-подписке.", show_alert=True
     )
