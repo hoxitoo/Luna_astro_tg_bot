@@ -47,6 +47,19 @@ def zodiac_with_emoji(sign: str) -> str:
     return f"{emoji} {sign}".strip() if emoji else sign
 
 
+MAX_QUESTION_LEN = 500
+
+
+def validate_question(question: str) -> str | None:
+    """Return an error message if question exceeds the max length, otherwise None."""
+    if len(question) > MAX_QUESTION_LEN:
+        return (
+            f"🌙 Вопрос слишком длинный (больше {MAX_QUESTION_LEN} символов).\n\n"
+            "Попробуй сформулировать его короче — в нескольких предложениях."
+        )
+    return None
+
+
 def truncate(text: str, max_len: int = 4096) -> str:
     """Truncate text to Telegram's max message length, adding ellipsis if needed."""
     if len(text) <= max_len:

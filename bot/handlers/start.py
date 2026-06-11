@@ -11,35 +11,60 @@ router = Router()
 
 
 class OnboardingFSM(StatesGroup):
+    # Triggered voluntarily (profile setup) or after first spread
     waiting_name = State()
     waiting_zodiac = State()
 
 
-WELCOME_TEXT = (
+WELCOME_NEW = (
     "🌙 *Я — Луна.*\n\n"
     "Я читаю карты и слушаю звёзды.\n"
-    "Каждый день — три бесплатных расклада.\n\n"
-    "Как тебя зовут?"
+    "Три расклада в день — бесплатно.\n\n"
+    "Что хочешь узнать сегодня?"
 )
 
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
+    await state.clear()
+
+    # Parse referral code: /start ref_12345
+    ref_id: int | None = None
+    parts = message.text.split(maxsplit=1)
+    if len(parts) > 1 and parts[1].startswith("ref_"):
+        try:
+            ref_id = int(parts[1][4:])
+        except ValueError:
+            pass
+
     async with async_session_factory() as session:
         user = await crud.get_or_create_user(
             session, message.from_user.id, message.from_user.username
         )
+        # Apply referral bonus (7 days Pro to both) — only once, skip self-ref
+        if ref_id and ref_id != message.from_user.id and not user.referred_by:
+            await crud.apply_referral(session, user.telegram_id, ref_id)
 
-    if user.name and user.zodiac_sign:
-        await message.answer(
-            f"🌙 С возвращением, {user.name}...",
-            reply_markup=main_menu(),
-            parse_mode="Markdown"
-        )
-        return
+    if user.name:
+        text = f"🌙 С возвращением, {user.name}..."
+    else:
+        text = WELCOME_NEW
 
+    await message.answer(text, parse_mode="Markdown", reply_markup=main_menu())
+
+
+# ---------------------------------------------------------------------------
+# Voluntary profile setup — triggered by "setup_profile" callback
+# or automatically after a user's first spread (see tarot.py)
+# ---------------------------------------------------------------------------
+
+@router.callback_query(F.data == "setup_profile")
+async def setup_profile(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(OnboardingFSM.waiting_name)
-    await message.answer(WELCOME_TEXT, parse_mode="Markdown", reply_markup=cancel_button())
+    await callback.message.edit_text(
+        "🌙 Как тебя зовут?",
+        reply_markup=cancel_button()
+    )
 
 
 @router.message(OnboardingFSM.waiting_name)

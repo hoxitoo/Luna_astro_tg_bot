@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 from aiohttp import web
 from bot.config import settings
-from bot.handlers import start, tarot, astro, payment, free_chat, admin, profile, errors
+from bot.handlers import start, tarot, astro, payment, free_chat, admin, profile, errors, media
 from bot.middleware.throttling import ThrottlingMiddleware
 from bot.db.session import engine
 from bot.db.models import Base
@@ -49,6 +49,7 @@ async def main() -> None:
     dp.include_router(tarot.router)
     dp.include_router(astro.router)
     dp.include_router(payment.router)
+    dp.include_router(media.router)       # media before free_chat
     dp.include_router(free_chat.router)  # last — catches unhandled text
 
     # Robokassa webhook server

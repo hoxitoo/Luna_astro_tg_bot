@@ -19,6 +19,8 @@ class User(Base):
     is_pro: Mapped[bool] = mapped_column(Boolean, default=False)
     pro_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     extra_spreads: Mapped[int] = mapped_column(Integer, default=0)
+    referred_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    referral_bonus_given: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

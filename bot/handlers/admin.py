@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone, timedelta
 from aiogram import Router, Bot
 from aiogram.filters import Command
@@ -7,6 +8,8 @@ from bot.config import settings
 from bot.db.session import async_session_factory
 from bot.db.models import User, Payment
 from bot.db import crud
+
+_BROADCAST_DELAY = 0.05  # seconds between messages (Telegram flood control)
 
 router = Router()
 
@@ -86,6 +89,7 @@ async def cmd_broadcast(message: Message, bot: Bot) -> None:
             sent += 1
         except Exception:
             failed += 1
+        await asyncio.sleep(_BROADCAST_DELAY)
 
     await message.answer(
         f"✅ Рассылка завершена\n\nОтправлено: `{sent}`\nОшибок: `{failed}`",

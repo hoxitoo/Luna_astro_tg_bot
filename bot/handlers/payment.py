@@ -48,7 +48,11 @@ async def _create_payment_link(callback: CallbackQuery, plan: str) -> None:
     await callback.message.edit_text(
         f"🌙 Оплата Pro на *{plan_names[plan]}*\n\n"
         f"Сумма: *{amount} ₽*\n\n"
-        "После оплаты подписка активируется автоматически.",
+        "После оплаты подписка активируется автоматически.\n\n"
+        "_Нажимая «Оплатить», ты принимаешь "
+        "[условия использования](https://telegra.ph/Luna-Usloviya-ispolzovaniya) "
+        "и подтверждаешь: цифровой контент предоставляется в момент оплаты, "
+        "возврат не предусмотрен._",
         parse_mode="Markdown",
         reply_markup=builder.as_markup()
     )

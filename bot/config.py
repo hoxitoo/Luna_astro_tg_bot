@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     WEBHOOK_HOST: str = ""
     SENTRY_DSN: str = ""
     ADMIN_IDS: list[int] = []
+    BOT_USERNAME: str = ""  # e.g. luna_tarot_bot — used for referral links
 
 
 settings = Settings()

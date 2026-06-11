@@ -56,7 +56,7 @@ async def set_pro(session: AsyncSession, user_id: int, plan: str) -> None:
     on top of the current expiry date (not from now) so they don't lose days.
     """
     now = datetime.now(timezone.utc)
-    days = 365 if plan == "year" else 30
+    days = {"year": 365, "month": 30, "referral": 7}.get(plan, 30)
 
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
@@ -93,6 +93,25 @@ async def use_extra_spread(session: AsyncSession, user_id: int) -> None:
     if user and user.extra_spreads > 0:
         user.extra_spreads -= 1
         await session.commit()
+
+
+async def apply_referral(session: AsyncSession, user_id: int, referrer_id: int) -> bool:
+    """Store referrer and give 7-day Pro bonus to both users. Returns True if bonus applied."""
+    # Mark referred_by on new user
+    result = await session.execute(select(User).where(User.telegram_id == user_id))
+    user = result.scalar_one_or_none()
+    if not user or user.referred_by or user.referral_bonus_given:
+        return False
+
+    user.referred_by = referrer_id
+    user.referral_bonus_given = True
+    await session.commit()
+
+    # Give 7 days Pro to both
+    for uid in (user_id, referrer_id):
+        await set_pro(session, uid, "referral")  # set_pro handles extension
+
+    return True
 
 
 async def set_payment_status(session: AsyncSession, inv_id: int, status: str) -> Payment | None:
