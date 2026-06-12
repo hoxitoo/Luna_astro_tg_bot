@@ -15,8 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 async def on_startup(**kwargs) -> None:
-    # Schema is managed exclusively by Alembic (`alembic upgrade head` —
-    # the Docker CMD runs it before the bot starts; run manually for local dev)
+    # Schema is managed by Alembic (`alembic upgrade head` — the Docker CMD
+    # runs it before the bot starts). Exception: SQLite dev mode, where
+    # the postgres-flavoured migrations don't apply — create tables directly.
+    if settings.DATABASE_URL.startswith("sqlite"):
+        from bot.db.session import engine
+        from bot.db.models import Base
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.warning("DEV MODE: SQLite database, tables created via create_all")
     logger.info("Bot starting up")
 
 
@@ -36,7 +43,14 @@ async def main() -> None:
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
     )
-    storage = RedisStorage.from_url(settings.REDIS_URL)
+    if settings.REDIS_URL:
+        storage = RedisStorage.from_url(settings.REDIS_URL)
+    else:
+        # Dev mode without Redis: FSM state lives in process memory
+        # (lost on restart — fine for local testing, never for production)
+        from aiogram.fsm.storage.memory import MemoryStorage
+        storage = MemoryStorage()
+        logger.warning("DEV MODE: REDIS_URL empty — using MemoryStorage for FSM")
     dp = Dispatcher(storage=storage)
 
     # Middleware

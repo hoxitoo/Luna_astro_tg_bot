@@ -1,5 +1,7 @@
 from datetime import date, datetime
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -48,6 +50,9 @@ class Spread(Base):
 
 class DailyLimit(Base):
     __tablename__ = "daily_limits"
+    __table_args__ = (
+        UniqueConstraint("user_id", "date", name="uq_daily_limits_user_date"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id"))

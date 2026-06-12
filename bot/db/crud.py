@@ -1,6 +1,7 @@
 import json
 from datetime import date, datetime, timezone, timedelta
 from sqlalchemy import select, update, and_, func as sqlfunc
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from bot.db.models import User, DailyLimit, Payment, Spread
 
@@ -13,8 +14,15 @@ async def get_or_create_user(session: AsyncSession, telegram_id: int, username: 
     if not user:
         user = User(telegram_id=telegram_id, username=username)
         session.add(user)
-        await session.commit()
-        await session.refresh(user)
+        try:
+            await session.commit()
+            await session.refresh(user)
+        except IntegrityError:
+            # Race: two concurrent updates from the same new user both tried
+            # to INSERT — the loser re-reads the row the winner created
+            await session.rollback()
+            result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+            user = result.scalar_one()
     return user
 
 
@@ -35,8 +43,17 @@ async def get_daily_limit(session: AsyncSession, user_id: int, today: date) -> D
     if not limit:
         limit = DailyLimit(user_id=user_id, date=today)
         session.add(limit)
-        await session.commit()
-        await session.refresh(limit)
+        try:
+            await session.commit()
+            await session.refresh(limit)
+        except IntegrityError:
+            await session.rollback()
+            result = await session.execute(
+                select(DailyLimit).where(
+                    and_(DailyLimit.user_id == user_id, DailyLimit.date == today)
+                )
+            )
+            limit = result.scalar_one()
     return limit
 
 
