@@ -8,8 +8,6 @@ from aiohttp import web
 from bot.config import settings
 from bot.handlers import start, tarot, astro, payment, free_chat, admin, profile, errors, media, history
 from bot.middleware.throttling import ThrottlingMiddleware
-from bot.db.session import engine
-from bot.db.models import Base
 from bot.scheduler import create_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -17,9 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 async def on_startup(**kwargs) -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables ensured")
+    # Schema is managed exclusively by Alembic (`alembic upgrade head` —
+    # the Docker CMD runs it before the bot starts; run manually for local dev)
+    logger.info("Bot starting up")
 
 
 async def main() -> None:

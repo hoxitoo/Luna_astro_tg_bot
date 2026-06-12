@@ -2,7 +2,7 @@
 import os
 import pytest
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import date, timedelta
 
 os.environ.setdefault("BOT_TOKEN", "test:token")
 os.environ.setdefault("CLAUDE_API_KEY", "test-key")
@@ -100,3 +100,70 @@ async def test_get_spreads_page_empty(session):
     spreads, total = await crud.get_spreads_page(session, 307, page=1)
     assert total == 0
     assert spreads == []
+
+
+# --- "Луна помнит" follow-ups ---
+
+@pytest.mark.asyncio
+async def test_save_spread_with_question_sets_follow_up(session):
+    await crud.get_or_create_user(session, telegram_id=308)
+    spread = await crud.save_spread(
+        session, 308, "tarot_3", "Текст...", question="Уйти или остаться?"
+    )
+    assert spread.follow_up_date is not None
+    assert spread.follow_up_sent is False
+    delta = (spread.follow_up_date - date.today()).days
+    assert 13 <= delta <= 14  # MSK vs local date can differ by a day
+
+
+@pytest.mark.asyncio
+async def test_save_spread_without_question_no_follow_up(session):
+    await crud.get_or_create_user(session, telegram_id=309)
+    spread = await crud.save_spread(session, 309, "birthday", "С днём рождения...")
+    assert spread.follow_up_date is None
+
+
+@pytest.mark.asyncio
+async def test_get_due_follow_ups_returns_due_only(session):
+    await crud.get_or_create_user(session, telegram_id=310)
+    overdue = await crud.save_spread(
+        session, 310, "tarot_3", "Старый расклад", question="Вопрос?"
+    )
+    overdue.follow_up_date = date.today() - timedelta(days=1)
+    await session.commit()
+    # Fresh spread — follow-up two weeks away, must NOT be due
+    await crud.save_spread(session, 310, "tarot_3", "Новый расклад", question="Другой?")
+
+    due = await crud.get_due_follow_ups(session)
+    due_user_ids = [user.telegram_id for _, user in due]
+    assert 310 in due_user_ids
+    spread, _ = next(item for item in due if item[1].telegram_id == 310)
+    assert spread.question == "Вопрос?"
+
+
+@pytest.mark.asyncio
+async def test_get_due_follow_ups_one_per_user(session):
+    """A backlog of due spreads must yield ONE follow-up (the latest), not spam."""
+    await crud.get_or_create_user(session, telegram_id=311)
+    for q in ("Первый?", "Второй?", "Третий?"):
+        s = await crud.save_spread(session, 311, "tarot_3", "...", question=q)
+        s.follow_up_date = date.today() - timedelta(days=2)
+    await session.commit()
+
+    due = await crud.get_due_follow_ups(session)
+    user_311 = [item for item in due if item[1].telegram_id == 311]
+    assert len(user_311) == 1
+
+
+@pytest.mark.asyncio
+async def test_mark_follow_ups_sent_clears_backlog(session):
+    await crud.get_or_create_user(session, telegram_id=312)
+    for q in ("Раз?", "Два?"):
+        s = await crud.save_spread(session, 312, "tarot_3", "...", question=q)
+        s.follow_up_date = date.today() - timedelta(days=3)
+    await session.commit()
+
+    await crud.mark_follow_ups_sent(session, 312)
+
+    due = await crud.get_due_follow_ups(session)
+    assert all(user.telegram_id != 312 for _, user in due)

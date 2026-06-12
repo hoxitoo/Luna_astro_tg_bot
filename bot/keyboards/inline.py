@@ -22,20 +22,22 @@ def tarot_menu() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def persona_keyboard(is_pro: bool = False) -> InlineKeyboardMarkup:
+def persona_keyboard(is_pro: bool = False, prefix: str = "persona") -> InlineKeyboardMarkup:
+    """Archetype picker. `prefix` distinguishes profile flow ('persona')
+    from onboarding flow ('onb_persona') — they have different handlers."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
         text="🌙 Молодая Луна — загадочная, образная",
-        callback_data="persona:young_moon"
+        callback_data=f"{prefix}:young_moon"
     ))
     if is_pro:
         builder.row(InlineKeyboardButton(
             text="🌕 Полная Луна — тёплая, принимающая",
-            callback_data="persona:full_moon"
+            callback_data=f"{prefix}:full_moon"
         ))
         builder.row(InlineKeyboardButton(
             text="🌑 Тёмная Луна — прямая, без прикрас",
-            callback_data="persona:dark_moon"
+            callback_data=f"{prefix}:dark_moon"
         ))
     else:
         builder.row(InlineKeyboardButton(

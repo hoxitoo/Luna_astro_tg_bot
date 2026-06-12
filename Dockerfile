@@ -17,4 +17,6 @@ COPY . .
 RUN adduser --disabled-password --gecos "" botuser
 USER botuser
 
-CMD ["python", "-m", "bot.main"]
+# Apply DB migrations, then start the bot.
+# Alembic is the single source of truth for schema (no create_all in code).
+CMD ["sh", "-c", "alembic upgrade head && python -m bot.main"]

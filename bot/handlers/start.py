@@ -7,8 +7,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from bot.db.session import async_session_factory
 from bot.db import crud
-from bot.keyboards.inline import main_menu, zodiac_keyboard, cancel_button
+from bot.keyboards.inline import main_menu, zodiac_keyboard, cancel_button, persona_keyboard
+from bot.services.limit_service import is_pro_active
 from bot.utils.text_utils import ZODIAC_EMOJI
+
+_VALID_PERSONAS = {"young_moon", "full_moon", "dark_moon"}
 
 router = Router()
 
@@ -21,6 +24,7 @@ _NO_YEAR = 2000
 
 class OnboardingFSM(StatesGroup):
     # Triggered voluntarily (profile setup) or after first spread
+    waiting_persona = State()
     waiting_name = State()
     waiting_zodiac = State()
     waiting_birth_date = State()
@@ -70,6 +74,25 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "setup_profile")
 async def setup_profile(callback: CallbackQuery, state: FSMContext) -> None:
+    async with async_session_factory() as session:
+        user = await crud.get_or_create_user(session, callback.from_user.id)
+
+    await state.set_state(OnboardingFSM.waiting_persona)
+    await callback.message.edit_text(
+        "🌙 Сначала — кто будет говорить с тобой?\n\n"
+        "У Луны три лица. Выбери своё.",
+        reply_markup=persona_keyboard(is_pro=is_pro_active(user), prefix="onb_persona")
+    )
+
+
+@router.callback_query(OnboardingFSM.waiting_persona, F.data.startswith("onb_persona:"))
+async def onboarding_persona(callback: CallbackQuery, state: FSMContext) -> None:
+    persona = callback.data.split(":", 1)[1]
+    if persona not in _VALID_PERSONAS:
+        await callback.answer("Выбери Луну с клавиатуры.", show_alert=True)
+        return
+
+    await state.update_data(persona=persona)
     await state.set_state(OnboardingFSM.waiting_name)
     await callback.message.edit_text(
         "🌙 Как тебя зовут?",
@@ -151,11 +174,15 @@ async def _finish_onboarding(callback: CallbackQuery, state: FSMContext, birth_d
     data = await state.get_data()
     name = data.get("name", callback.from_user.first_name or "незнакомка")
     zodiac = data.get("zodiac", "")
+    extra = {}
+    if birth_date:
+        extra["birth_date"] = birth_date
+    if data.get("persona") in _VALID_PERSONAS:
+        extra["luna_persona"] = data["persona"]
     async with async_session_factory() as session:
         await crud.update_user(
             session, callback.from_user.id,
-            name=name, zodiac_sign=zodiac,
-            **({"birth_date": birth_date} if birth_date else {})
+            name=name, zodiac_sign=zodiac, **extra
         )
     await state.clear()
     await callback.message.edit_text(
@@ -169,11 +196,15 @@ async def _finish_onboarding_message(message: Message, state: FSMContext, birth_
     data = await state.get_data()
     name = data.get("name", message.from_user.first_name or "незнакомка")
     zodiac = data.get("zodiac", "")
+    extra = {}
+    if birth_date:
+        extra["birth_date"] = birth_date
+    if data.get("persona") in _VALID_PERSONAS:
+        extra["luna_persona"] = data["persona"]
     async with async_session_factory() as session:
         await crud.update_user(
             session, message.from_user.id,
-            name=name, zodiac_sign=zodiac,
-            **({"birth_date": birth_date} if birth_date else {})
+            name=name, zodiac_sign=zodiac, **extra
         )
     await state.clear()
     await message.answer(

@@ -41,6 +41,9 @@ class Spread(Base):
     topic: Mapped[str | None] = mapped_column(String(128), nullable=True)  # for "Luna remembers"
     cards_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     interpretation: Mapped[str] = mapped_column(Text)
+    # "Луна помнит": follow-up 14 days after a question-spread
+    follow_up_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    follow_up_sent: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class DailyLimit(Base):

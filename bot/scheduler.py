@@ -230,6 +230,46 @@ async def _send_birthday_spreads(bot: Bot) -> None:
     logger.info(f"Birthday spreads: sent={sent}, failed={failed}")
 
 
+async def _send_follow_ups(bot: Bot) -> None:
+    """«Луна помнит»: 14 дней после расклада с вопросом — Луна пишет первой."""
+    today = datetime.now(MSK).strftime("%Y-%m-%d")
+    redis = get_redis()
+    acquired = await redis.set(f"broadcast:follow_up:{today}", 1, ex=3600 * 12, nx=True)
+    if not acquired:
+        logger.info("Follow-ups already sent today, skipping.")
+        return
+
+    async with async_session_factory() as session:
+        due = await crud.get_due_follow_ups(session)
+
+    if not due:
+        return
+
+    sent = failed = 0
+    blocked: list[int] = []
+    for spread, user in due:
+        try:
+            name = user.name or "незнакомка"
+            text = await claude_service.follow_up_message(
+                name, spread.question, spread.spread_type, persona=user.luna_persona
+            )
+            await bot.send_message(user.telegram_id, f"🌙 {text}", parse_mode="Markdown")
+            async with async_session_factory() as session:
+                await crud.mark_follow_ups_sent(session, user.telegram_id)
+            sent += 1
+        except TelegramForbiddenError:
+            blocked.append(user.telegram_id)
+            failed += 1
+        except Exception as e:
+            # incl. ClaudeUnavailable — stays unsent, retried tomorrow
+            logger.warning(f"Follow-up failed for {user.telegram_id}: {e}")
+            failed += 1
+        await asyncio.sleep(_BROADCAST_DELAY)
+
+    await _mark_blocked(blocked)
+    logger.info(f"Follow-ups: sent={sent}, failed={failed}")
+
+
 async def _check_subscription_expiry(bot: Bot) -> None:
     """Remind users whose Pro subscription expires in exactly 3 days."""
     now = datetime.now(timezone.utc)
@@ -309,6 +349,12 @@ def create_scheduler(bot: Bot) -> AsyncIOScheduler:
         _send_birthday_spreads,
         trigger=CronTrigger(hour=8, minute=0),
         args=[bot], id="birthday_spreads", replace_existing=True,
+    )
+    # "Луна помнит" follow-ups — 19:00 MSK (evening, people actually read)
+    scheduler.add_job(
+        _send_follow_ups,
+        trigger=CronTrigger(hour=19, minute=0),
+        args=[bot], id="follow_ups", replace_existing=True,
     )
 
     return scheduler

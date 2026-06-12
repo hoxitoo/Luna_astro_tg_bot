@@ -147,6 +147,9 @@ async def apply_referral(session: AsyncSession, user_id: int, referrer_id: int) 
     return True
 
 
+FOLLOW_UP_DAYS = 14
+
+
 async def save_spread(
     session: AsyncSession,
     user_id: int,
@@ -157,6 +160,12 @@ async def save_spread(
     topic: str | None = None,
     cards_json: list | None = None,
 ) -> Spread:
+    # "Луна помнит": spreads asked about a concrete situation get a follow-up
+    follow_up = (
+        datetime.now(_MSK).date() + timedelta(days=FOLLOW_UP_DAYS)
+        if question
+        else None
+    )
     spread = Spread(
         user_id=user_id,
         spread_type=spread_type,
@@ -164,6 +173,7 @@ async def save_spread(
         question=question,
         topic=topic,
         cards_json=json.dumps(cards_json, ensure_ascii=False) if cards_json is not None else None,
+        follow_up_date=follow_up,
     )
     session.add(spread)
     await session.commit()
@@ -210,6 +220,45 @@ async def get_users_with_birthday_today(session: AsyncSession) -> list[User]:
         )
     )
     return result.scalars().all()
+
+
+async def get_due_follow_ups(session: AsyncSession) -> list[tuple[Spread, User]]:
+    """Spreads whose follow-up is due (date <= today MSK, not yet sent), with their
+    active owners. One per user — the most recent spread, so a backlog doesn't
+    turn into день-за-днём spam."""
+    today = datetime.now(_MSK).date()
+    result = await session.execute(
+        select(Spread, User)
+        .join(User, User.telegram_id == Spread.user_id)
+        .where(
+            Spread.follow_up_date.is_not(None),
+            Spread.follow_up_date <= today,
+            Spread.follow_up_sent.is_(False),
+            User.is_active.is_(True),
+        )
+        .order_by(Spread.user_id, Spread.created_at.desc())
+    )
+    rows = result.all()
+    latest_per_user: dict[int, tuple[Spread, User]] = {}
+    for spread, user in rows:
+        latest_per_user.setdefault(user.telegram_id, (spread, user))
+    return list(latest_per_user.values())
+
+
+async def mark_follow_ups_sent(session: AsyncSession, user_id: int) -> None:
+    """Mark ALL due follow-ups of this user as sent — we send only the latest one."""
+    today = datetime.now(_MSK).date()
+    await session.execute(
+        update(Spread)
+        .where(
+            Spread.user_id == user_id,
+            Spread.follow_up_date.is_not(None),
+            Spread.follow_up_date <= today,
+            Spread.follow_up_sent.is_(False),
+        )
+        .values(follow_up_sent=True)
+    )
+    await session.commit()
 
 
 async def mark_users_inactive(session: AsyncSession, user_ids: list[int]) -> None:
