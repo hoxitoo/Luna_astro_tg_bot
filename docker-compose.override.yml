@@ -7,8 +7,7 @@ services:
     volumes:
       - .:/app          # hot-reload: code changes reflected without rebuild
     environment:
-      ROBOKASSA_TEST_MODE: "True"
-      WEBHOOK_HOST: ""  # use long polling locally
+      WEBHOOK_HOST: ""  # use long polling locally; no payment webhook in dev
 
   db:
     ports:

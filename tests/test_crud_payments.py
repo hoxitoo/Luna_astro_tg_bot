@@ -1,4 +1,4 @@
-"""Tests for payment CRUD: collision-free InvId and idempotent paid transition."""
+"""Tests for payment CRUD: provider id binding and idempotent paid transition."""
 import os
 import pytest
 import asyncio
@@ -36,40 +36,46 @@ async def session(session_factory):
 
 
 @pytest.mark.asyncio
-async def test_create_payment_inv_id_equals_row_id(session):
+async def test_create_payment_starts_pending_without_provider_id(session):
     await crud.get_or_create_user(session, telegram_id=401)
     payment = await crud.create_payment(session, 401, 199, "month")
-    assert payment.robokassa_inv_id == payment.id
     assert payment.status == "pending"
+    assert payment.provider_payment_id is None
 
 
 @pytest.mark.asyncio
-async def test_create_payment_inv_ids_unique(session):
+async def test_set_provider_id_then_lookup(session):
     await crud.get_or_create_user(session, telegram_id=402)
-    p1 = await crud.create_payment(session, 402, 199, "month")
-    p2 = await crud.create_payment(session, 402, 990, "year")
-    assert p1.robokassa_inv_id != p2.robokassa_inv_id
+    payment = await crud.create_payment(session, 402, 990, "year")
+    await crud.set_payment_provider_id(session, payment.id, "yk_2c8f_402")
+
+    found = await crud.get_payment_by_provider_id(session, "yk_2c8f_402")
+    assert found is not None
+    assert found.amount == 990
+    assert found.plan == "year"
 
 
 @pytest.mark.asyncio
 async def test_mark_payment_paid_first_call_returns_payment(session):
     await crud.get_or_create_user(session, telegram_id=403)
     payment = await crud.create_payment(session, 403, 199, "month")
+    await crud.set_payment_provider_id(session, payment.id, "yk_pay_403")
 
-    claimed = await crud.mark_payment_paid(session, payment.robokassa_inv_id)
+    claimed = await crud.mark_payment_paid(session, "yk_pay_403")
     assert claimed is not None
     assert claimed.status == "paid"
 
 
 @pytest.mark.asyncio
 async def test_mark_payment_paid_replay_returns_none(session):
-    """A replayed Robokassa callback must not grant the purchase twice."""
+    """A replayed YooKassa webhook must not grant the purchase twice."""
     await crud.get_or_create_user(session, telegram_id=404)
     payment = await crud.create_payment(session, 404, 199, "month")
+    await crud.set_payment_provider_id(session, payment.id, "yk_pay_404")
 
-    first = await crud.mark_payment_paid(session, payment.robokassa_inv_id)
-    second = await crud.mark_payment_paid(session, payment.robokassa_inv_id)
-    third = await crud.mark_payment_paid(session, payment.robokassa_inv_id)
+    first = await crud.mark_payment_paid(session, "yk_pay_404")
+    second = await crud.mark_payment_paid(session, "yk_pay_404")
+    third = await crud.mark_payment_paid(session, "yk_pay_404")
 
     assert first is not None
     assert second is None
@@ -77,15 +83,5 @@ async def test_mark_payment_paid_replay_returns_none(session):
 
 
 @pytest.mark.asyncio
-async def test_mark_payment_paid_unknown_inv_id(session):
-    assert await crud.mark_payment_paid(session, 999999) is None
-
-
-@pytest.mark.asyncio
-async def test_get_payment_by_inv_id(session):
-    await crud.get_or_create_user(session, telegram_id=405)
-    payment = await crud.create_payment(session, 405, 99, "pack")
-    found = await crud.get_payment_by_inv_id(session, payment.robokassa_inv_id)
-    assert found is not None
-    assert found.amount == 99
-    assert found.plan == "pack"
+async def test_mark_payment_paid_unknown_provider_id(session):
+    assert await crud.mark_payment_paid(session, "yk_does_not_exist") is None

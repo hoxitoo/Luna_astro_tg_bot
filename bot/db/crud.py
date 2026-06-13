@@ -94,27 +94,45 @@ async def set_pro(session: AsyncSession, user_id: int, plan: str, days: int | No
 
 
 async def create_payment(session: AsyncSession, user_id: int, amount: int, plan: str) -> Payment:
-    """Create a payment row; InvId = the row's own autoincrement id (collision-free)."""
+    """Create a pending payment row. The YooKassa payment id is attached later
+    via set_payment_provider_id once the payment is created through the API."""
     payment = Payment(user_id=user_id, amount=amount, plan=plan)
     session.add(payment)
-    await session.flush()  # populates payment.id
-    payment.robokassa_inv_id = payment.id
     await session.commit()
     await session.refresh(payment)
     return payment
 
 
-async def get_payment_by_inv_id(session: AsyncSession, inv_id: int) -> Payment | None:
-    result = await session.execute(select(Payment).where(Payment.robokassa_inv_id == inv_id))
+async def set_payment_provider_id(
+    session: AsyncSession, payment_id: int, provider_payment_id: str
+) -> None:
+    """Bind the YooKassa payment id to our row so the webhook can find it."""
+    await session.execute(
+        update(Payment)
+        .where(Payment.id == payment_id)
+        .values(provider_payment_id=provider_payment_id)
+    )
+    await session.commit()
+
+
+async def get_payment_by_provider_id(
+    session: AsyncSession, provider_payment_id: str
+) -> Payment | None:
+    result = await session.execute(
+        select(Payment).where(Payment.provider_payment_id == provider_payment_id)
+    )
     return result.scalar_one_or_none()
 
 
-async def mark_payment_paid(session: AsyncSession, inv_id: int) -> Payment | None:
+async def mark_payment_paid(session: AsyncSession, provider_payment_id: str) -> Payment | None:
     """Atomic pending→paid transition. Returns the payment only on the FIRST call;
-    a replayed/duplicate callback gets None and must not grant anything."""
+    a replayed/duplicate webhook gets None and must not grant anything."""
     result = await session.execute(
         update(Payment)
-        .where(Payment.robokassa_inv_id == inv_id, Payment.status == "pending")
+        .where(
+            Payment.provider_payment_id == provider_payment_id,
+            Payment.status == "pending",
+        )
         .values(status="paid")
         .returning(Payment)
     )

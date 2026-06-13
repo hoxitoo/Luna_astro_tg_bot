@@ -9,11 +9,12 @@ class Settings(BaseSettings):
     CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
     DATABASE_URL: str
     REDIS_URL: str = "redis://localhost:6379/0"
-    ROBOKASSA_LOGIN: str = ""
-    ROBOKASSA_PASSWORD1: str = ""
-    ROBOKASSA_PASSWORD2: str = ""
-    # Safe default: forgetting the env var in production must NOT silently serve test payments
-    ROBOKASSA_TEST_MODE: bool = False
+    # ЮKassa (YooKassa). Self-employed (НПД) mode: receipts are auto-generated
+    # by YooKassa in «Мой налог», so we don't send a receipt object.
+    YOOKASSA_SHOP_ID: str = ""
+    YOOKASSA_SECRET_KEY: str = ""
+    # Where the user lands after paying. Empty → falls back to the bot deep link.
+    YOOKASSA_RETURN_URL: str = ""
     FREE_SPREADS_PER_DAY: int = 3
     FREE_CHAT_PER_DAY: int = 10
     SUBSCRIPTION_PRICE_MONTH: int = 199

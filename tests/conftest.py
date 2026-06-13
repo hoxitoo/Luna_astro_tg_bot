@@ -8,9 +8,8 @@ os.environ.setdefault("BOT_TOKEN", "test:token")
 os.environ.setdefault("CLAUDE_API_KEY", "test-key")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
-os.environ.setdefault("ROBOKASSA_LOGIN", "TestShop")
-os.environ.setdefault("ROBOKASSA_PASSWORD1", "pass1")
-os.environ.setdefault("ROBOKASSA_PASSWORD2", "pass2")
+os.environ.setdefault("YOOKASSA_SHOP_ID", "123456")
+os.environ.setdefault("YOOKASSA_SECRET_KEY", "test_secret")
 
 
 def make_user(

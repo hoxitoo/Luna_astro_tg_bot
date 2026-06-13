@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
+from aiogram.types import BotCommand
 from aiohttp import web
 from bot.config import settings
 from bot.handlers import start, tarot, astro, payment, free_chat, admin, profile, errors, media, history
@@ -12,6 +13,17 @@ from bot.scheduler import create_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+# Commands shown in Telegram's blue "Menu" button — always one tap away,
+# so a user stuck mid-flow can /start or /cancel to reset themselves.
+_BOT_COMMANDS = [
+    BotCommand(command="start", description="🌙 Главное меню / перезапуск"),
+    BotCommand(command="cancel", description="❌ Отменить текущее действие"),
+    BotCommand(command="profile", description="👤 Мой профиль"),
+    BotCommand(command="history", description="📖 Мой дневник раскладов"),
+    BotCommand(command="help", description="❓ Помощь"),
+]
 
 
 async def on_startup(**kwargs) -> None:
@@ -33,16 +45,17 @@ async def main() -> None:
         sentry_sdk.init(dsn=settings.SENTRY_DSN, traces_sample_rate=0.1)
         logger.info("Sentry initialized")
 
-    if settings.ROBOKASSA_TEST_MODE:
+    if settings.WEBHOOK_HOST and not (settings.YOOKASSA_SHOP_ID and settings.YOOKASSA_SECRET_KEY):
         logger.warning(
-            "=== ROBOKASSA TEST MODE IS ON — payments are NOT real. "
-            "Unset ROBOKASSA_TEST_MODE before launch! ==="
+            "=== WEBHOOK_HOST is set but YOOKASSA credentials are empty — "
+            "payments will fail. Fill YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY. ==="
         )
 
     bot = Bot(
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
     )
+    await bot.set_my_commands(_BOT_COMMANDS)
     if settings.REDIS_URL:
         storage = RedisStorage.from_url(settings.REDIS_URL)
     else:
@@ -71,15 +84,16 @@ async def main() -> None:
     dp.include_router(media.router)       # media before free_chat
     dp.include_router(free_chat.router)  # last — catches unhandled text
 
-    # Robokassa webhook server
+    # YooKassa webhook server
     if settings.WEBHOOK_HOST:
         app = web.Application()
-        app.router.add_post("/robokassa/result", payment.robokassa_result_handler)
+        app["bot"] = bot  # so the webhook handler can notify the user
+        app.router.add_post("/yookassa/webhook", payment.yookassa_webhook_handler)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", 8080)
         await site.start()
-        logger.info("Robokassa webhook server started on :8080")
+        logger.info("YooKassa webhook server started on :8080 (/yookassa/webhook)")
 
     # Daily card-of-day scheduler
     scheduler = create_scheduler(bot)

@@ -68,9 +68,10 @@ class Payment(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.telegram_id"))
     amount: Mapped[int] = mapped_column(Integer)
     plan: Mapped[str] = mapped_column(String(16))  # 'month' | 'year' | 'pack'
-    # Set to the row's own autoincrement id right after INSERT (collision-free InvId).
-    # Nullable so the initial flush passes; multiple NULLs don't violate UNIQUE.
-    robokassa_inv_id: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
+    # YooKassa payment id (UUID string), assigned after the payment is created
+    # via the API. Nullable so the initial INSERT passes; multiple NULLs don't
+    # violate UNIQUE. The webhook is matched back to this row by this id.
+    provider_payment_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|paid|failed
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

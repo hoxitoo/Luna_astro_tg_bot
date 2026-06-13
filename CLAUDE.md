@@ -10,7 +10,7 @@ AI-интерпретации генерируются через Claude API.
 - PostgreSQL 15 + SQLAlchemy 2.0 async + Alembic
 - Claude API: claude-sonnet-4-20250514, temperature=0.9, max_tokens=600
 - Redis — FSMContext storage + кеш интерпретаций (TTL 24ч)
-- Robokassa — оплата для RU/BY/KZ
+- ЮKassa (YooKassa) — оплата для RU
 - Docker + docker-compose
 
 ## Key Rules
@@ -38,5 +38,5 @@ AI-интерпретации генерируются через Claude API.
 - bot/services/claude_service.py — все 7 типов промптов
 - bot/services/card_engine.py — CardEngine.draw(n), поддержка reversed
 - bot/services/limit_service.py — check_limit, increment_limit
-- bot/services/payment_service.py — Robokassa URL + MD5 verify
+- bot/services/payment_service.py — ЮKassa: создание платежа + проверка вебхука через API
 - bot/db/crud.py — get_or_create_user, get_daily_limit, set_pro
