@@ -83,12 +83,13 @@ async def set_pro(session: AsyncSession, user_id: int, plan: str, days: int | No
     result = await session.execute(select(User).where(User.telegram_id == user_id))
     user = result.scalar_one_or_none()
 
+    # SQLite (dev) returns naive datetimes; normalise to UTC-aware before comparing
+    existing = user.pro_until if user else None
+    if existing is not None and existing.tzinfo is None:
+        existing = existing.replace(tzinfo=timezone.utc)
+
     # Extend from existing expiry if still active, otherwise from now
-    base = (
-        user.pro_until
-        if (user and user.pro_until and user.pro_until > now)
-        else now
-    )
+    base = existing if (existing and existing > now) else now
     pro_until = base + timedelta(days=days)
     await update_user(session, user_id, is_pro=True, pro_until=pro_until)
 

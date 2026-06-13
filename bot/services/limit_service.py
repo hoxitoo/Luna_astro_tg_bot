@@ -16,7 +16,12 @@ def is_pro_active(user: User) -> bool:
         return False
     if user.pro_until is None:
         return False
-    return datetime.now(timezone.utc) < user.pro_until
+    pro_until = user.pro_until
+    # SQLite (dev) returns naive datetimes; Postgres returns aware. Normalise
+    # to UTC-aware so the comparison never raises naive/aware TypeError.
+    if pro_until.tzinfo is None:
+        pro_until = pro_until.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) < pro_until
 
 
 async def can_do_tarot(session: AsyncSession, user: User) -> bool:

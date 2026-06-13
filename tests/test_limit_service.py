@@ -37,6 +37,20 @@ def test_is_pro_active_with_past_expiry():
     assert is_pro_active(user) is False
 
 
+def test_is_pro_active_with_naive_future_expiry():
+    """SQLite (dev) returns naive datetimes — must not raise naive/aware TypeError."""
+    naive_future = datetime.utcnow() + timedelta(days=30)
+    assert naive_future.tzinfo is None  # sanity
+    user = _make_user(is_pro=True, pro_until=naive_future)
+    assert is_pro_active(user) is True
+
+
+def test_is_pro_active_with_naive_past_expiry():
+    naive_past = datetime.utcnow() - timedelta(days=1)
+    user = _make_user(is_pro=True, pro_until=naive_past)
+    assert is_pro_active(user) is False
+
+
 def test_is_pro_active_is_pro_true_but_no_expiry():
     """is_pro=True without pro_until — treat as not active (data inconsistency guard)."""
     user = _make_user(is_pro=True, pro_until=None)
