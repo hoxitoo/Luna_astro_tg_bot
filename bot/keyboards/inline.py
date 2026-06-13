@@ -8,6 +8,7 @@ def main_menu() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="⭐ Гороскоп на сегодня", callback_data="horoscope"))
     builder.row(InlineKeyboardButton(text="🌙 Карта дня", callback_data="card_of_day"))
     builder.row(InlineKeyboardButton(text="📖 Мой дневник", callback_data="history_page:1"))
+    builder.row(InlineKeyboardButton(text="🌑 Моя Луна", callback_data="change_persona"))
     builder.row(InlineKeyboardButton(text="💎 Pro-подписка", callback_data="paywall"))
     return builder.as_markup()
 
