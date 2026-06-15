@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Луна — таро и астрология в Telegram</title>
+<meta name="description" content="Луна — мистический бот-таролог в Telegram. Расклады таро, личный гороскоп, карта дня и лунный дневник. Три характера Луны на выбор.">
+<meta property="og:title" content="Луна — таро и астрология в Telegram">
+<meta property="og:description" content="Расклады таро, гороскоп, карта дня и лунный дневник. Задай вопрос — Луна ответит.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --night:#0a0a1a; --night-2:#12122c; --panel:rgba(255,255,255,.04);
+    --gold:#e8c87a; --gold-soft:#f3e1b0; --violet:#8b7bd8; --violet-deep:#5b4ba8;
+    --text:#e9e7f5; --muted:#a39fc4; --line:rgba(232,200,122,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:radial-gradient(ellipse at 50% -10%, #1b1640 0%, var(--night-2) 40%, var(--night) 100%);
+    color:var(--text); font-family:'Manrope',system-ui,sans-serif; line-height:1.6;
+    overflow-x:hidden; position:relative; min-height:100vh;
+  }
+  h1,h2,h3,.serif{font-family:'Cormorant Garamond',Georgia,serif; font-weight:600; line-height:1.1}
+  a{color:inherit; text-decoration:none}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px}
+
+  /* twinkling stars */
+  .stars{position:fixed; inset:0; z-index:0; pointer-events:none}
+  .star{position:absolute; background:#fff; border-radius:50%; opacity:.5;
+    animation:tw var(--d,4s) ease-in-out infinite alternate}
+  @keyframes tw{from{opacity:.15;transform:scale(.7)}to{opacity:.9;transform:scale(1.15)}}
+
+  section{position:relative; z-index:1}
+
+  /* hero */
+  .hero{text-align:center; padding:120px 0 90px}
+  .moon{
+    width:130px;height:130px;border-radius:50%;margin:0 auto 36px;
+    background:radial-gradient(circle at 35% 30%, #fff8e6 0%, var(--gold-soft) 35%, var(--gold) 70%, #b89243 100%);
+    box-shadow:0 0 60px 12px rgba(232,200,122,.35), inset -14px -10px 30px rgba(120,90,30,.45);
+    position:relative; animation:float 7s ease-in-out infinite;
+  }
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
+  .hero h1{font-size:clamp(54px,9vw,92px); letter-spacing:1px; background:linear-gradient(180deg,#fff,var(--gold-soft));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent}
+  .hero .tag{font-size:clamp(18px,2.4vw,24px); color:var(--muted); margin:18px auto 8px; max-width:620px; font-family:'Cormorant Garamond',serif; font-style:italic}
+  .hero .sub{color:var(--muted); max-width:560px; margin:14px auto 38px}
+  .cta{
+    display:inline-flex; align-items:center; gap:10px; padding:16px 34px; border-radius:40px;
+    background:linear-gradient(135deg,var(--gold) 0%,#d9b25e 100%); color:#1a1330; font-weight:700; font-size:17px;
+    box-shadow:0 10px 34px rgba(232,200,122,.3); transition:transform .2s, box-shadow .2s;
+  }
+  .cta:hover{transform:translateY(-3px); box-shadow:0 16px 44px rgba(232,200,122,.45)}
+  .cta.ghost{background:transparent; color:var(--gold-soft); border:1px solid var(--line); box-shadow:none}
+
+  .eyebrow{color:var(--gold); letter-spacing:3px; text-transform:uppercase; font-size:13px; font-weight:600; text-align:center}
+  .section-title{font-size:clamp(34px,5vw,52px); text-align:center; margin:12px 0 8px}
+  .section-lead{color:var(--muted); text-align:center; max-width:600px; margin:0 auto 50px}
+  .pad{padding:80px 0}
+
+  /* three moons */
+  .moons{display:grid; grid-template-columns:repeat(3,1fr); gap:22px}
+  .mcard{background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:34px 26px; text-align:center;
+    backdrop-filter:blur(6px); transition:transform .25s, border-color .25s}
+  .mcard:hover{transform:translateY(-6px); border-color:rgba(232,200,122,.5)}
+  .mcard .ph{font-size:46px; margin-bottom:14px}
+  .mcard h3{font-size:27px; color:var(--gold-soft)}
+  .mcard p{color:var(--muted); font-size:15px; margin-top:8px}
+  .mcard .lock{display:inline-block; margin-top:14px; font-size:12px; letter-spacing:1px; color:var(--violet); text-transform:uppercase}
+
+  /* features */
+  .feat{display:grid; grid-template-columns:repeat(3,1fr); gap:20px}
+  .fcard{background:var(--panel); border:1px solid rgba(139,123,216,.15); border-radius:18px; padding:28px 24px; transition:transform .2s}
+  .fcard:hover{transform:translateY(-4px)}
+  .fcard .ic{font-size:30px; margin-bottom:12px}
+  .fcard h3{font-size:23px; color:#fff}
+  .fcard p{color:var(--muted); font-size:14.5px; margin-top:6px}
+
+  /* steps */
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:24px; counter-reset:s}
+  .step{text-align:center; padding:10px}
+  .step .n{counter-increment:s; width:52px;height:52px;border-radius:50%;margin:0 auto 16px;
+    display:grid;place-items:center; border:1px solid var(--line); color:var(--gold); font-family:'Cormorant Garamond',serif; font-size:26px}
+  .step .n::before{content:counter(s)}
+  .step h3{font-size:21px;color:#fff}
+  .step p{color:var(--muted); font-size:14.5px; margin-top:6px}
+
+  /* pricing */
+  .price{display:grid; grid-template-columns:1fr 1fr; gap:22px; max-width:780px; margin:0 auto}
+  .pcard{background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:36px 30px}
+  .pcard.pro{border-color:rgba(232,200,122,.55); box-shadow:0 0 40px rgba(232,200,122,.12); position:relative}
+  .pcard.pro::after{content:'популярный'; position:absolute; top:18px; right:18px; font-size:11px; letter-spacing:1.5px;
+    text-transform:uppercase; color:#1a1330; background:var(--gold); padding:4px 10px; border-radius:20px; font-weight:700}
+  .pcard h3{font-size:30px; color:var(--gold-soft)}
+  .pcard .amt{font-size:40px; font-family:'Cormorant Garamond',serif; color:#fff; margin:8px 0 18px}
+  .pcard .amt small{font-size:16px; color:var(--muted)}
+  .pcard ul{list-style:none; display:flex; flex-direction:column; gap:11px}
+  .pcard li{color:var(--text); font-size:15px; padding-left:26px; position:relative}
+  .pcard li::before{content:'🌙'; position:absolute; left:0; font-size:13px}
+  .pcard .note{color:var(--muted); font-size:13px; margin-top:18px}
+
+  /* final cta */
+  .final{text-align:center; padding:100px 0}
+  .final h2{font-size:clamp(36px,6vw,60px); margin-bottom:10px}
+  .final p{color:var(--muted); margin-bottom:34px}
+
+  footer{border-top:1px solid var(--line); padding:42px 0; text-align:center; color:var(--muted); font-size:14px}
+  footer a{color:var(--gold-soft)} footer a:hover{text-decoration:underline}
+  footer .links{display:flex; gap:24px; justify-content:center; flex-wrap:wrap; margin-bottom:16px}
+
+  @media(max-width:760px){
+    .moons,.feat,.steps,.price{grid-template-columns:1fr}
+    .hero{padding:90px 0 60px}
+    .pad{padding:60px 0}
+  }
+</style>
+</head>
+<body>
+
+<div class="stars" id="stars"></div>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap">
+    <div class="moon"></div>
+    <h1>Луна</h1>
+    <p class="tag">«Задай вопрос — и я отвечу. Тихо, без спешки.»</p>
+    <p class="sub">Мистический проводник в мире таро и астрологии прямо в Telegram. Расклады, гороскопы и лунный дневник — для тех, кто ищет ответы внутри себя.</p>
+    <a class="cta" href="https://t.me/luna_reads_bot">🌙 Открыть в Telegram</a>
+  </div>
+</section>
+
+<!-- THREE MOONS -->
+<section class="pad">
+  <div class="wrap">
+    <p class="eyebrow">Три характера</p>
+    <h2 class="section-title">Выбери свою Луну</h2>
+    <p class="section-lead">Одна и та же мудрость звучит по-разному. Реши, каким голосом она будет говорить с тобой.</p>
+    <div class="moons">
+      <div class="mcard">
+        <div class="ph">🌙</div>
+        <h3>Молодая Луна</h3>
+        <p>Загадочная, образная, говорит метафорами. Оставляет место догадке.</p>
+      </div>
+      <div class="mcard">
+        <div class="ph">🌕</div>
+        <h3>Полная Луна</h3>
+        <p>Тёплая и принимающая. Поддержит и обнимет словом в трудный момент.</p>
+        <span class="lock">в Pro</span>
+      </div>
+      <div class="mcard">
+        <div class="ph">🌑</div>
+        <h3>Тёмная Луна</h3>
+        <p>Прямая, честная, без прикрас. Говорит то, что ты боишься услышать.</p>
+        <span class="lock">в Pro</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="pad">
+  <div class="wrap">
+    <p class="eyebrow">Что внутри</p>
+    <h2 class="section-title">Больше, чем расклад</h2>
+    <p class="section-lead">Луна рядом каждый день — а не только когда тревожно.</p>
+    <div class="feat">
+      <div class="fcard"><div class="ic">🃏</div><h3>Расклады таро</h3><p>На три карты, на отношения и на год вперёд. С трактовкой именно твоего вопроса.</p></div>
+      <div class="fcard"><div class="ic">🌑</div><h3>Расклад на прошлое</h3><p>Спроси о том, что уже случилось — и увидь, насколько точно карты читают твою историю.</p></div>
+      <div class="fcard"><div class="ic">⭐</div><h3>Личный гороскоп</h3><p>Прогноз на день по твоему знаку. Без общих фраз — только для тебя.</p></div>
+      <div class="fcard"><div class="ic">🌙</div><h3>Карта дня</h3><p>Каждое утро — одна карта и послание, с которым стоит прожить этот день.</p></div>
+      <div class="fcard"><div class="ic">📖</div><h3>Лунный дневник</h3><p>Все твои расклады сохраняются. Возвращайся и смотри, как менялся твой путь.</p></div>
+      <div class="fcard"><div class="ic">🎂</div><h3>Расклад в день рождения</h3><p>Особое послание на новый год жизни — Луна помнит и поздравит сама.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section class="pad">
+  <div class="wrap">
+    <p class="eyebrow">Как это работает</p>
+    <h2 class="section-title">Три шага до ответа</h2>
+    <div class="steps" style="margin-top:40px">
+      <div class="step"><div class="n"></div><h3>Открой бота</h3><p>Нажми кнопку, выбери имя, знак зодиака и характер своей Луны.</p></div>
+      <div class="step"><div class="n"></div><h3>Задай вопрос</h3><p>О любви, работе, выборе пути — или просто о том, что на душе.</p></div>
+      <div class="step"><div class="n"></div><h3>Услышь Луну</h3><p>Карты лягут, и ты получишь живую, личную трактовку — без шаблонов.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="pad">
+  <div class="wrap">
+    <p class="eyebrow">Тарифы</p>
+    <h2 class="section-title">Начни бесплатно</h2>
+    <p class="section-lead">Загляни внутрь без обязательств. А когда захочешь больше — Луна откроется полностью.</p>
+    <div class="price">
+      <div class="pcard">
+        <h3>Бесплатно</h3>
+        <div class="amt">0 ₽</div>
+        <ul>
+          <li>3 расклада таро в день</li>
+          <li>Гороскоп на сегодня</li>
+          <li>Карта дня</li>
+          <li>Лунный дневник</li>
+          <li>Молодая Луна</li>
+        </ul>
+      </div>
+      <div class="pcard pro">
+        <h3>Pro</h3>
+        <div class="amt">199 ₽<small> / мес</small></div>
+        <ul>
+          <li>Безлимитные расклады</li>
+          <li>Расклад на год (12 карт)</li>
+          <li>Все три характера Луны</li>
+          <li>Свободный диалог без лимитов</li>
+          <li>Карта дня каждое утро</li>
+        </ul>
+        <p class="note">Оплата картой или звёздами Telegram ⭐. Год — выгоднее на 58%.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="final">
+  <div class="wrap">
+    <h2>Луна уже ждёт</h2>
+    <p>Первый расклад — прямо сейчас.</p>
+    <a class="cta" href="https://t.me/luna_reads_bot">🌙 Открыть в Telegram</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://t.me/luna_reads_bot">Telegram-бот</a>
+      <a href="privacy.html">Политика конфиденциальности</a>
+      <a href="terms.html">Условия использования</a>
+    </div>
+    <p>© 2026 Луна · таро и астрология. Сделано с заботой и щепоткой звёздной пыли.</p>
+  </div>
+</footer>
+
+<script>
+  // generate a soft starfield
+  const sky = document.getElementById('stars');
+  const N = window.innerWidth < 760 ? 60 : 120;
+  let html = '';
+  for (let i = 0; i < N; i++){
+    const s = (Math.random()*2+1).toFixed(1);
+    html += `<span class="star" style="left:${Math.random()*100}%;top:${Math.random()*100}%;width:${s}px;height:${s}px;--d:${(Math.random()*4+2).toFixed(1)}s"></span>`;
+  }
+  sky.innerHTML = html;
+</script>
+</body>
+</html>
