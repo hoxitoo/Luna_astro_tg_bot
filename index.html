@@ -56,14 +56,14 @@
   .section-lead{color:var(--muted); text-align:center; max-width:600px; margin:16px auto 0; font-size:17px}
   .pad{padding:90px 0}
 
-  .presence{position:relative; min-height:72vh; display:flex; align-items:center; overflow:hidden;
-    background:var(--night); box-shadow:inset 0 0 140px 50px var(--night)}
-  .presence .portrait{position:absolute; inset:0; background:url('assets/luna-portrait.png') center right/cover no-repeat;
-    filter:grayscale(1) brightness(.72) contrast(1.05)}
-  .presence .tint{position:absolute; inset:0; background:radial-gradient(62% 82% at 76% 50%, rgba(150,86,150,.6), transparent 70%);
-    mix-blend-mode:color}
+  .presence{position:relative; min-height:74vh; display:flex; align-items:center; overflow:hidden;
+    background:var(--night); box-shadow:inset 0 0 90px 16px var(--night)}
+  .presence .portrait{position:absolute; inset:0; background:url('assets/luna-portrait.png') 62% center/cover no-repeat;
+    filter:contrast(1.05) saturate(1.06)}
+  .presence .tint{position:absolute; inset:0; mix-blend-mode:soft-light;
+    background:linear-gradient(90deg, rgba(58,36,64,.35), rgba(58,36,64,.10) 60%, transparent)}
   .presence .veil{position:absolute; inset:0;
-    background:linear-gradient(90deg, var(--night) 6%, rgba(20,16,14,.6) 46%, rgba(20,16,14,.12) 100%)}
+    background:linear-gradient(90deg, var(--night) 2%, rgba(20,16,14,.80) 26%, rgba(20,16,14,.32) 56%, rgba(20,16,14,0) 100%)}
   .presence .content{position:relative; z-index:2; max-width:500px}
   .presence .eyebrow{color:var(--violet)}
   .presence blockquote{font-family:'Cormorant Garamond',serif; font-style:italic; font-size:clamp(28px,5vw,46px);
