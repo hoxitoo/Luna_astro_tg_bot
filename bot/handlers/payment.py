@@ -17,6 +17,10 @@ router = Router()
 _PLAN_NAMES = {"month": "месяц", "year": "год", "pack": "пакет +10 раскладов"}
 _STARS_PRICES = {"month": settings.STARS_PRICE_MONTH, "year": settings.STARS_PRICE_YEAR}
 
+# Legal pages live on the GitHub Pages site (gh-pages branch)
+_TERMS_URL = "https://hoxitoo.github.io/Luna_astro_tg_bot/terms.html"
+_PRIVACY_URL = "https://hoxitoo.github.io/Luna_astro_tg_bot/privacy.html"
+
 _PRO_CONFIRM = (
     "✨ Оплата прошла — добро пожаловать в Pro!\n\n"
     "Теперь тебе доступны безлимитные расклады, гороскоп каждый день, "
@@ -132,8 +136,8 @@ async def _create_payment_link(callback: CallbackQuery, plan: str) -> None:
         f"Сумма: *{amount} ₽*\n\n"
         "После оплаты подписка активируется автоматически.\n\n"
         "_Нажимая «Оплатить», ты принимаешь "
-        "[условия использования](https://telegra.ph/Luna-Usloviya-ispolzovaniya) "
-        "и [политику конфиденциальности](https://telegra.ph/Luna-Politika-konfidencialnosti) "
+        f"[условия использования]({_TERMS_URL}) "
+        f"и [политику конфиденциальности]({_PRIVACY_URL}) "
         "и подтверждаешь: цифровой контент предоставляется в момент оплаты, "
         "возврат не предусмотрен._",
         parse_mode="Markdown",
