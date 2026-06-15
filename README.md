@@ -2,6 +2,9 @@
 
 Telegram-бот для гаданий на таро и гороскопов. Персонаж — Луна, мистический таролог.
 
+- **Бот:** [@luna_reads_bot](https://t.me/luna_reads_bot)
+- **Лендинг:** https://hoxitoo.github.io/Luna_astro_tg_bot/ (ветка `gh-pages`)
+
 ## Стек
 - Python 3.11 + aiogram 3.x
 - PostgreSQL 15 + SQLAlchemy 2.0 async
@@ -55,3 +58,19 @@ data/
 ├── tarot_cards.json     # 78 карт таро
 └── zodiac_signs.json    # 12 знаков зодиака
 ```
+
+## Ветки
+
+- **`main`** — код бота.
+- **`gh-pages`** — статический сайт (лендинг + юридические страницы), публикуется через GitHub Pages.
+
+## Документация
+
+- [docs/DEPLOY_REGRU.md](docs/DEPLOY_REGRU.md) — деплой на VPS reg.ru (Stars + Robokassa).
+- [docs/PRIVACY_POLICY.md](docs/PRIVACY_POLICY.md) — политика конфиденциальности (152-ФЗ).
+- Лендинг и страницы `privacy.html` / `terms.html` живут в ветке `gh-pages`.
+
+## GitHub Pages
+
+Включить один раз: **Settings → Pages → Source: Deploy from a branch → `gh-pages` / `(root)`**.
+После этого сайт доступен на https://hoxitoo.github.io/Luna_astro_tg_bot/.
