@@ -52,14 +52,29 @@ def persona_keyboard(is_pro: bool = False, prefix: str = "persona") -> InlineKey
     return builder.as_markup()
 
 
-def paywall_menu(price_month: int = 199, price_year: int = 990) -> InlineKeyboardMarkup:
+def paywall_menu(
+    price_month: int = 199,
+    price_year: int = 990,
+    stars_month: int = 150,
+    stars_year: int = 750,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    # Telegram Stars — instant, no external account needed
     builder.row(InlineKeyboardButton(
-        text=f"💳 Подписка на месяц — {price_month} ₽",
+        text=f"⭐ Месяц — {stars_month} Stars",
+        callback_data="pay_stars_month"
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"⭐ Год — {stars_year} Stars (выгодно)",
+        callback_data="pay_stars_year"
+    ))
+    # Cards / rubles via Robokassa
+    builder.row(InlineKeyboardButton(
+        text=f"💳 Месяц картой — {price_month} ₽",
         callback_data="pay_month"
     ))
     builder.row(InlineKeyboardButton(
-        text=f"🌟 Подписка на год — {price_year} ₽ (скидка 58%)",
+        text=f"💳 Год картой — {price_year} ₽ (скидка 58%)",
         callback_data="pay_year"
     ))
     builder.row(InlineKeyboardButton(

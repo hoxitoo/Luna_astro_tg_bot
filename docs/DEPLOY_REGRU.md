@@ -1,15 +1,20 @@
 # Деплой Луны на VPS reg.ru
 
 Пошаговая инструкция: от заказа сервера до бота, работающего 24/7 с приёмом
-платежей ЮKassa.
+платежей (Telegram Stars + Robokassa).
+
+> **Про оплату:** Telegram Stars работают сразу после деплоя — им НЕ нужен ни
+> домен, ни вебхук, ни торговый аккаунт. Домен и nginx (разделы 2, 8, 9)
+> нужны ТОЛЬКО для Robokassa (карты/рубли). Если на старте хватает Stars —
+> разделы 2, 8, 9 можно пропустить и вернуться к ним позже.
 
 ---
 
 ## 0. Что понадобится
 
 - Аккаунт на reg.ru
-- Домен (можно купить там же — нужен для HTTPS-вебхука ЮKassa)
-- Заполненные `BOT_TOKEN`, `CLAUDE_API_KEY`, `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY`
+- Домен (нужен только для Robokassa; для Stars не требуется)
+- Заполненные `BOT_TOKEN`, `CLAUDE_API_KEY` (обязательно), `ROBOKASSA_*` (для карт)
 - ~30–40 минут
 
 ---
@@ -75,17 +80,25 @@ CLAUDE_MODEL=claude-sonnet-4-20250514
 DATABASE_URL=postgresql+asyncpg://luna:СИЛЬНЫЙ_ПАРОЛЬ@db:5432/luna_db
 REDIS_URL=redis://redis:6379/0
 
-# ЮKassa (ЛК → Интеграция → Ключи API)
-YOOKASSA_SHOP_ID=ваш_shop_id
-YOOKASSA_SECRET_KEY=ваш_секретный_ключ
-YOOKASSA_RETURN_URL=https://t.me/luna_reads_bot
+# Telegram Stars (без ключей — через токен бота). Цены в Stars.
+STARS_PRICE_MONTH=150
+STARS_PRICE_YEAR=750
 
-# Домен с HTTPS — включает приём вебхука ЮKassa
+# Robokassa (карты/рубли) — из кабинета Robokassa
+ROBOKASSA_LOGIN=ваш_логин
+ROBOKASSA_PASSWORD1=пароль_1
+ROBOKASSA_PASSWORD2=пароль_2
+ROBOKASSA_TEST_MODE=False
+
+# Домен с HTTPS — включает приём вебхука Robokassa (для Stars НЕ нужен)
 WEBHOOK_HOST=https://ваш-домен.ru
 
 ADMIN_IDS=[1065395448]
 BOT_USERNAME=luna_reads_bot
 ```
+
+> Если пока запускаешь только на Stars — оставь `ROBOKASSA_*` пустыми и
+> `WEBHOOK_HOST=` пустым. Бот будет принимать звёзды без домена и nginx.
 
 > Пароль PostgreSQL в `DATABASE_URL` должен совпадать с тем, что в
 > `docker-compose.yml` у сервиса `db` (переменная `POSTGRES_PASSWORD`).
@@ -104,12 +117,16 @@ docker compose logs -f bot     # смотрим логи, ищем "Bot starting
 
 Миграции Alembic применяются автоматически (это прописано в `Dockerfile`:
 `alembic upgrade head` перед стартом бота). Бот стартует в режиме long polling,
-а вебхук-сервер ЮKassa слушает порт `8080` внутри контейнера.
+а вебхук-сервер Robokassa слушает порт `8080` внутри контейнера (только если
+задан `WEBHOOK_HOST`).
 
-## 8. HTTPS через nginx + Let's Encrypt
+> **Если только Stars** — разделы 8 и 9 можно пропустить: звёзды приходят
+> через обычные апдейты бота, без вебхука.
 
-ЮKassa шлёт уведомления только на HTTPS. Ставим nginx на хосте как обратный
-прокси к порту 8080 контейнера.
+## 8. HTTPS через nginx + Let's Encrypt (для Robokassa)
+
+Robokassa шлёт ResultURL-уведомления только на HTTPS. Ставим nginx на хосте как
+обратный прокси к порту 8080 контейнера.
 
 ```bash
 apt install -y nginx certbot python3-certbot-nginx
@@ -131,22 +148,25 @@ nginx -t && systemctl reload nginx
 certbot --nginx -d ВАШ-ДОМЕН.ru
 ```
 
-Проверка: `https://ВАШ-ДОМЕН.ru/yookassa/webhook` должен отвечать (на GET — 404
-или 405, это нормально; вебхук принимает POST).
+Проверка: `https://ВАШ-ДОМЕН.ru/robokassa/result` должен отвечать (на GET — 404
+или 405, это нормально; ResultURL принимает POST).
 
-## 9. Прописать вебхук в ЮKassa
+## 9. Прописать ResultURL в Robokassa
 
-1. ЛК ЮKassa → **Интеграция** → **HTTP-уведомления**.
-2. URL: `https://ВАШ-ДОМЕН.ru/yookassa/webhook`
-3. Отметь событие **`payment.succeeded`**.
-4. Сохрани.
+1. Кабинет Robokassa → **Технические настройки**.
+2. **Result URL**: `https://ВАШ-ДОМЕН.ru/robokassa/result`, метод **POST**.
+3. Алгоритм расчёта хеша — **MD5**.
+4. Сохрани и дождись, пока магазин активируют.
 
 ## 10. Боевая проверка
 
-1. В боте: «💎 Pro-подписка» → выбери план → «Оплатить».
-2. Оплати реальной картой минимальной суммой (или используй
-   [тестовые карты ЮKassa](https://yookassa.ru/developers/payment-acceptance/testing-and-going-live/testing),
-   если магазин ещё в тестовом режиме).
+**Stars (работает сразу):**
+1. В боте: «💎 Pro-подписка» → «⭐ Месяц — … Stars».
+2. Подтверди оплату звёздами. Бот пришлёт «✨ Оплата прошла — добро пожаловать в Pro!».
+
+**Robokassa:**
+1. «💎 Pro-подписка» → «💳 Месяц картой» → «Оплатить».
+2. Оплати картой (или в тестовом режиме `ROBOKASSA_TEST_MODE=True`).
 3. После оплаты бот должен прислать «✨ Оплата прошла — добро пожаловать в Pro!».
 4. Проверь в логах: `docker compose logs bot | grep "Payment processed"`.
 
@@ -162,5 +182,6 @@ certbot --nginx -d ВАШ-ДОМЕН.ru
 | Бэкап БД | `docker compose exec db pg_dump -U luna luna_db > backup.sql` |
 | Статус | `docker compose ps` |
 
-**Перед приёмом первых платежей убедись**, что в ЮKassa магазин переведён из
-тестового режима в боевой и подписан договор.
+**Перед приёмом первых платежей картой убедись**, что в Robokassa магазин
+активирован, подписан договор и `ROBOKASSA_TEST_MODE=False`. Telegram Stars
+работают сразу, без активации.

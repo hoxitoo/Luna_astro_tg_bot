@@ -95,50 +95,62 @@ async def set_pro(session: AsyncSession, user_id: int, plan: str, days: int | No
 
 
 async def create_payment(session: AsyncSession, user_id: int, amount: int, plan: str) -> Payment:
-    """Create a pending payment row. The YooKassa payment id is attached later
-    via set_payment_provider_id once the payment is created through the API."""
-    payment = Payment(user_id=user_id, amount=amount, plan=plan)
+    """Create a Robokassa payment row; InvId = the row's own autoincrement id."""
+    payment = Payment(user_id=user_id, amount=amount, plan=plan, provider="robokassa")
     session.add(payment)
+    await session.flush()  # populates payment.id
+    payment.robokassa_inv_id = payment.id
     await session.commit()
     await session.refresh(payment)
     return payment
 
 
-async def set_payment_provider_id(
-    session: AsyncSession, payment_id: int, provider_payment_id: str
-) -> None:
-    """Bind the YooKassa payment id to our row so the webhook can find it."""
-    await session.execute(
-        update(Payment)
-        .where(Payment.id == payment_id)
-        .values(provider_payment_id=provider_payment_id)
-    )
-    await session.commit()
-
-
-async def get_payment_by_provider_id(
-    session: AsyncSession, provider_payment_id: str
-) -> Payment | None:
-    result = await session.execute(
-        select(Payment).where(Payment.provider_payment_id == provider_payment_id)
-    )
+async def get_payment_by_inv_id(session: AsyncSession, inv_id: int) -> Payment | None:
+    result = await session.execute(select(Payment).where(Payment.robokassa_inv_id == inv_id))
     return result.scalar_one_or_none()
 
 
-async def mark_payment_paid(session: AsyncSession, provider_payment_id: str) -> Payment | None:
-    """Atomic pending→paid transition. Returns the payment only on the FIRST call;
-    a replayed/duplicate webhook gets None and must not grant anything."""
+async def mark_payment_paid(session: AsyncSession, inv_id: int) -> Payment | None:
+    """Atomic pending→paid transition for Robokassa. Returns the payment only on
+    the FIRST call; a replayed/duplicate callback gets None and grants nothing."""
     result = await session.execute(
         update(Payment)
-        .where(
-            Payment.provider_payment_id == provider_payment_id,
-            Payment.status == "pending",
-        )
+        .where(Payment.robokassa_inv_id == inv_id, Payment.status == "pending")
         .values(status="paid")
         .returning(Payment)
     )
     payment = result.scalar_one_or_none()
     await session.commit()
+    return payment
+
+
+async def record_stars_payment(
+    session: AsyncSession, user_id: int, amount: int, plan: str, charge_id: str
+) -> Payment | None:
+    """Record a completed Telegram Stars payment. Idempotent: returns None if this
+    charge id was already recorded (Telegram may redeliver successful_payment), so
+    the caller must not grant the purchase twice."""
+    existing = await session.execute(
+        select(Payment).where(Payment.provider_payment_id == charge_id)
+    )
+    if existing.scalar_one_or_none() is not None:
+        return None
+    payment = Payment(
+        user_id=user_id,
+        amount=amount,
+        plan=plan,
+        provider="stars",
+        provider_payment_id=charge_id,
+        status="paid",
+    )
+    session.add(payment)
+    try:
+        await session.commit()
+        await session.refresh(payment)
+    except IntegrityError:
+        # Race: a concurrent redelivery inserted the same charge first
+        await session.rollback()
+        return None
     return payment
 
 

@@ -45,10 +45,10 @@ async def main() -> None:
         sentry_sdk.init(dsn=settings.SENTRY_DSN, traces_sample_rate=0.1)
         logger.info("Sentry initialized")
 
-    if settings.WEBHOOK_HOST and not (settings.YOOKASSA_SHOP_ID and settings.YOOKASSA_SECRET_KEY):
+    if settings.ROBOKASSA_TEST_MODE:
         logger.warning(
-            "=== WEBHOOK_HOST is set but YOOKASSA credentials are empty — "
-            "payments will fail. Fill YOOKASSA_SHOP_ID / YOOKASSA_SECRET_KEY. ==="
+            "=== ROBOKASSA TEST MODE IS ON — card payments are NOT real. "
+            "Unset ROBOKASSA_TEST_MODE before launch! ==="
         )
 
     bot = Bot(
@@ -84,16 +84,15 @@ async def main() -> None:
     dp.include_router(media.router)       # media before free_chat
     dp.include_router(free_chat.router)  # last — catches unhandled text
 
-    # YooKassa webhook server
+    # Robokassa webhook server
     if settings.WEBHOOK_HOST:
         app = web.Application()
-        app["bot"] = bot  # so the webhook handler can notify the user
-        app.router.add_post("/yookassa/webhook", payment.yookassa_webhook_handler)
+        app.router.add_post("/robokassa/result", payment.robokassa_result_handler)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", 8080)
         await site.start()
-        logger.info("YooKassa webhook server started on :8080 (/yookassa/webhook)")
+        logger.info("Robokassa webhook server started on :8080 (/robokassa/result)")
 
     # Daily card-of-day scheduler
     scheduler = create_scheduler(bot)
